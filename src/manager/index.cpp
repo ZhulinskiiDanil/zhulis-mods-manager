@@ -49,6 +49,24 @@ void Manager::onRegistry(web::WebResponse const &response)
 
 void Manager::setMods(std::vector<registry::ModEntry> entries)
 {
+  // ! --- Self-update --- !
+  // The manager always tracks itself, first in the list
+  auto selfID = Mod::get()->getID();
+  auto self = std::ranges::find_if(entries, [&](auto const &entry)
+                                   { return entry.id == selfID; });
+
+  if (self == entries.end())
+  {
+    auto fallback = registry::fallback();
+    auto selfEntry = std::ranges::find_if(fallback, [&](auto const &entry)
+                                          { return entry.id == selfID; });
+
+    if (selfEntry != fallback.end())
+      entries.insert(entries.begin(), *selfEntry);
+  }
+  else
+    std::rotate(entries.begin(), self, self + 1);
+
   std::vector<ModState> mods;
 
   for (auto &entry : entries)

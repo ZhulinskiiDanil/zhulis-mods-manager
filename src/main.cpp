@@ -1,11 +1,73 @@
 #include <Geode/Geode.hpp>
+#include <Geode/modify/MenuLayer.hpp>
 
 #include "manager/index.hpp"
 
 using namespace geode::prelude;
 using namespace manager;
 
+static void notifyUpdates()
+{
+  auto &manager = Manager::get();
+  auto self = manager.find(Mod::get()->getID());
+
+  // ! --- Self-update --- !
+  if (self && self->status == Status::UpdateAvailable)
+  {
+    createQuickPopup(
+        "Zhulis Mods Manager",
+        fmt::format("A new version of the manager is out: <cy>{}</c> -> <cg>{}</c>\nUpdate now?",
+                    Mod::get()->getVersion().toVString(), self->release->tag),
+        "Later", "Update",
+        [](auto, bool update)
+        {
+          if (update)
+            Manager::get().install(Mod::get()->getID());
+        });
+
+    return;
+  }
+
+  if (auto count = manager.updatesCount())
+    Notification::create(
+        fmt::format("{} Zhulis mod update{} available", count, count == 1 ? "" : "s"),
+        NotificationIcon::Info)
+        ->show();
+}
+
 // ! --- Startup update check --- !
+
+// Set when the check finished before the main menu was shown
+static bool s_pendingNotify = false;
+
+static bool isOnMenu()
+{
+  auto scene = CCDirector::sharedDirector()->getRunningScene();
+  return scene && scene->getChildByType<MenuLayer>(0);
+}
+
+class $modify(NotifyMenuLayer, MenuLayer)
+{
+  bool init()
+  {
+    if (!MenuLayer::init())
+      return false;
+
+    // Runs once the menu is actually on screen
+    if (s_pendingNotify)
+    {
+      s_pendingNotify = false;
+      scheduleOnce(schedule_selector(NotifyMenuLayer::onNotifyUpdates), .3f);
+    }
+
+    return true;
+  }
+
+  void onNotifyUpdates(float)
+  {
+    notifyUpdates();
+  }
+};
 
 $on_mod(Loaded)
 {
@@ -25,11 +87,11 @@ $on_mod(Loaded)
     // Unsubscribing inside the callback is safe, notify() iterates a copy
     manager.unsubscribe(subscription);
 
-    if (auto count = manager.updatesCount())
-      Notification::create(
-          fmt::format("{} Zhulis mod update{} available", count, count == 1 ? "" : "s"),
-          NotificationIcon::Info)
-          ->show(); });
+    // Popups shown on the loading screen get lost, wait for the menu
+    if (isOnMenu())
+      notifyUpdates();
+    else
+      s_pendingNotify = true; });
 
   manager.refresh();
 }

@@ -8,7 +8,7 @@
 	},
 	"id": "zhulis.mods-manager",
 	"name": "Zhulis Mods Manager",
-	"version": "v1.0.0",
+	"version": "v1.0.1",
 	"developer": "Zhulis",
 	"description": "Install and update Zhulis mods straight from GitHub releases",
 	"tags": [
@@ -16,7 +16,12 @@
 		"online"
 	],
 	"links": {
-		"source": "https://github.com/ZhulinskiiDanil/zhulis-mods-manager"
+		"source": "https://github.com/ZhulinskiiDanil/zhulis-mods-manager",
+		"community": "https://discord.gg/duuG4RqJKh"
+	},
+	"issues": {
+		"info": "Report bugs on GitHub or in the Discord server",
+		"url": "https://github.com/ZhulinskiiDanil/zhulis-mods-manager/issues"
 	},
 	"settings": {
 		"check-on-startup": {
