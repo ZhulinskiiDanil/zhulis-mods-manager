@@ -8,20 +8,10 @@
 using namespace geode::prelude;
 using namespace manager;
 
-// Geode UI nodes this mod has touched, re-applied when mod states change
-static WeakRef<CCNode> s_modsButton;
-static std::vector<std::pair<std::string, WeakRef<CCNode>>> s_modItems;
-static std::vector<std::pair<std::string, WeakRef<FLAlertLayer>>> s_modPopups;
-
 // ! --- Mods page button --- !
 
-static void updateModsButton()
+static void updateModsButton(CCNode *button)
 {
-  auto button = s_modsButton.lock();
-
-  if (!button)
-    return;
-
   if (auto badge = button->getChildByIDRecursive("updates-badge"_spr))
     badge->setVisible(Manager::get().updatesCount() > 0);
 }
@@ -49,8 +39,7 @@ static void addModsButton(CCScene *scene)
   menu->addChild(button);
   menu->updateLayout();
 
-  s_modsButton = button;
-  updateModsButton();
+  updateModsButton(button);
 }
 
 // Geode's ModsLayer isn't hookable, catch the scene it's shown in instead
@@ -137,36 +126,39 @@ static void applyModPopup(FLAlertLayer *popup, std::string_view id)
   menu->updateLayout();
 }
 
-template <class T>
-static void track(std::vector<std::pair<std::string, WeakRef<T>>> &list, std::string_view id, T *node)
+// Geode UI nodes are marked with their mod ID instead of being stored:
+// a WeakRef retains the node and may free it in the middle of a Geode event
+static void mark(CCNode *node, std::string_view id)
 {
-  std::erase_if(list, [&](auto const &entry)
-                { return !entry.second.valid() || entry.second.lock() == node; });
+  if (!node->getUserObject("mod-id"_spr))
+    node->setUserObject("mod-id"_spr, CCString::create(gd::string(std::string(id))));
+}
 
-  list.emplace_back(std::string(id), node);
+static void refreshNode(CCNode *node)
+{
+  if (auto id = typeinfo_cast<CCString *>(node->getUserObject("mod-id"_spr)))
+  {
+    if (auto popup = typeinfo_cast<FLAlertLayer *>(node))
+      applyModPopup(popup, id->getCString());
+    else
+      applyModItem(node, id->getCString());
+  }
+
+  if (node->getID() == "zhulis-mods-button"_spr)
+    updateModsButton(node);
+
+  // Copy: applying may add or remove children
+  auto children = CCArrayExt<CCNode *>(node->getChildren()).toVector();
+
+  for (auto child : children)
+    refreshNode(child);
 }
 
 // Mod states arrive after the Geode UI may already be built
 static void refreshGeodeUI()
 {
-  updateModsButton();
-
-  std::erase_if(s_modItems, [](auto const &entry)
-                { return !entry.second.valid(); });
-  std::erase_if(s_modPopups, [](auto const &entry)
-                { return !entry.second.valid(); });
-
-  for (auto const &[id, ref] : s_modItems)
-  {
-    if (auto item = ref.lock())
-      applyModItem(item, id);
-  }
-
-  for (auto const &[id, ref] : s_modPopups)
-  {
-    if (auto popup = ref.lock())
-      applyModPopup(popup, id);
-  }
+  if (auto scene = CCDirector::sharedDirector()->getRunningScene())
+    refreshNode(scene);
 }
 
 $on_mod(Loaded)
@@ -176,7 +168,7 @@ $on_mod(Loaded)
     if (!Manager::get().find(id))
       return;
 
-    track(s_modItems, id, item);
+    mark(item, id);
     applyModItem(item, id); })
       .leak();
 
@@ -185,7 +177,7 @@ $on_mod(Loaded)
     if (!Manager::get().find(id))
       return;
 
-    track(s_modPopups, id, popup);
+    mark(popup, id);
     applyModPopup(popup, id); })
       .leak();
 

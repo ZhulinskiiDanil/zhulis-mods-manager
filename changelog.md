@@ -1,3 +1,7 @@
+# v1.1.1
+
+ * Fixed a crash when opening the Geode mods page
+
 # v1.1.0
 
  * Checks that a release is compatible with your GD and Geode versions before installing it
