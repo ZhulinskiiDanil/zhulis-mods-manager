@@ -1,0 +1,42 @@
+{
+	"geode": "5.10.1",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
+	"id": "zhulis.mods-manager",
+	"name": "Zhulis Mods Manager",
+	"version": "v1.0.0",
+	"developer": "Zhulis",
+	"description": "Install and update Zhulis mods straight from GitHub releases",
+	"tags": [
+		"utility",
+		"online"
+	],
+	"links": {
+		"source": "https://github.com/ZhulinskiiDanil/zhulis-mods-manager"
+	},
+	"settings": {
+		"check-on-startup": {
+			"type": "bool",
+			"name": "Check for updates on startup",
+			"description": "Fetch the latest GitHub releases of Zhulis mods when the game starts.",
+			"default": true
+		},
+		"include-prereleases": {
+			"type": "bool",
+			"name": "Include pre-releases",
+			"description": "Offer GitHub pre-releases too, not only stable releases.",
+			"default": false
+		},
+		"registry-url": {
+			"type": "string",
+			"name": "Registry URL",
+			"description": "JSON list of tracked mods. A built-in list is used if it can't be fetched.",
+			"default": "https://raw.githubusercontent.com/ZhulinskiiDanil/zhulis-mods-manager/main/mods.json",
+			"filter": "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:/.-_~?#[]@!$&'()*+,;=%"
+		}
+	}
+}

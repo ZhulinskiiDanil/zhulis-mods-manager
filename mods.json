@@ -1,0 +1,19 @@
+{
+  "mods": [
+    {
+      "id": "zhulis.blitzkrieg",
+      "name": "Blitzkrieg",
+      "repo": "ZhulinskiiDanil/blitzkrieg"
+    },
+    {
+      "id": "zhulis.askdash",
+      "name": "AskDash",
+      "repo": "ZhulinskiiDanil/gd-ai"
+    },
+    {
+      "id": "zhulis.mods-manager",
+      "name": "Zhulis Mods Manager",
+      "repo": "ZhulinskiiDanil/zhulis-mods-manager"
+    }
+  ]
+}
