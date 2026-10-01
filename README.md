@@ -8,9 +8,19 @@ A [Geode](https://geode-sdk.org) mod that installs and updates **Zhulis** mods s
 
 - A **GitHub** button on the Geode mods page (left side) opens the list of Zhulis mods with their installed and latest versions, Install / Update buttons and release changelogs. A badge shows up on it when updates are available
 - Mods with a newer GitHub release get a **GitHub vX** label in the mods list and an update button in their info popup
+- **Update all**, download progress and a single restart prompt per batch
+- Changelog of every release newer than the installed one, and a versions list to install any release or roll back
 - Checks for updates on startup and shows a notification
 - Updates itself: the manager is always tracked and asks to update when a new version is out
-- Never downgrades: if the installed version (for example from the Geode Index) is newer than the GitHub release, it's left alone
+- Never downgrades on its own: if the installed version is newer than the GitHub release, it's left alone. Mods that are on the Geode Index with the same or a newer version are left to Geode
+
+## Safety
+
+- A release is installed only if it's compatible with your GD and Geode versions (checked from the mod's `mod.json` inside the `.geode`)
+- Downloads are verified against the SHA-256 digest GitHub provides for release assets
+- Missing required dependencies are reported, with a shortcut to install them from the Geode Index
+- Only `ZhulinskiiDanil/*` repos are trusted, entries pointing anywhere else are skipped even with a custom registry URL
+- GitHub allows 60 unauthenticated requests an hour (a `304 Not Modified` counts too), so releases are cached for 15 minutes. The refresh button skips the cache; offline or rate limited, the last known releases are used
 
 ## Installation
 
@@ -30,7 +40,7 @@ The list lives in [`mods.json`](mods.json) and is fetched at runtime, so adding 
 
 To add a mod:
 
-1. Add an entry with the mod `id`, display `name` and GitHub `repo` (`owner/name`, must be public)
+1. Add an entry with the mod `id`, display `name` and GitHub `repo` (`ZhulinskiiDanil/<name>`, must be public)
 2. Publish releases in that repo with a tag the mod version can be parsed from (`v1.2.3`) and the asset named `<mod-id>.geode`
 
 If the registry can't be fetched, a built-in copy from [`src/registry/index.cpp`](src/registry/index.cpp) is used.
@@ -66,8 +76,11 @@ src/
   main.cpp                  startup update check and notifications
   registry/                 tracked mods list (remote + built-in)
   github/                   GitHub releases API and downloads
+  cache/                    releases cache (ETag, 15 minute TTL)
+  geodeindex/               latest version on the Geode Index
   manager/                  mod states, install/update logic
   hooks/ModsLayer.cpp       Geode mods page button and UI events
   popups/ManagerPopup/      the mods list popup
+  popups/VersionsPopup/     every release of a mod, install or roll back
 mods.json                   tracked mods registry
 ```

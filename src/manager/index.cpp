@@ -1,5 +1,10 @@
 #include "index.hpp"
 
+#include <Geode/ui/GeodeUI.hpp>
+
+#include "../cache/index.hpp"
+#include "../geodeindex/index.hpp"
+
 using namespace manager;
 
 Manager &Manager::get()
@@ -9,19 +14,26 @@ Manager &Manager::get()
   return *instance;
 }
 
+static bool isBusy(Status status)
+{
+  return status == Status::Downloading || status == Status::Downloaded;
+}
+
 // ! --- Fetching --- !
 
-void Manager::refresh()
+void Manager::refresh(bool force)
 {
   if (m_loading)
     return;
 
   m_loading = true;
+  m_force = force;
   m_releaseTasks.clear();
+  m_indexTasks.clear();
 
   for (auto &state : m_mods)
   {
-    if (state.status != Status::Downloading && state.status != Status::Downloaded)
+    if (!isBusy(state.status))
       state.status = Status::Loading;
   }
 
@@ -44,7 +56,7 @@ void Manager::onRegistry(web::WebResponse const &response)
     setMods(entries.unwrap());
 
   for (auto const &state : m_mods)
-    fetchRelease(state.entry.id);
+    fetchMod(state.entry.id);
 }
 
 void Manager::setMods(std::vector<registry::ModEntry> entries)
@@ -72,7 +84,7 @@ void Manager::setMods(std::vector<registry::ModEntry> entries)
   for (auto &entry : entries)
   {
     // Keep download state across refreshes
-    if (auto old = findMut(entry.id); old && (old->status == Status::Downloading || old->status == Status::Downloaded))
+    if (auto old = findMut(entry.id); old && isBusy(old->status))
     {
       old->entry = std::move(entry);
       mods.push_back(std::move(*old));
@@ -93,47 +105,103 @@ void Manager::setMods(std::vector<registry::ModEntry> entries)
   notify();
 }
 
-void Manager::fetchRelease(std::string const &id)
+void Manager::fetchMod(std::string const &id)
 {
   auto state = findMut(id);
 
   if (!state)
     return;
 
-  m_releaseTasks[id].spawn(github::fetchReleases(state->entry.repo), [this, id](web::WebResponse response)
-                           { onRelease(id, response); });
+  state->pending = 2;
+
+  m_indexTasks[id].spawn(geodeindex::fetchLatest(id), [this, id](web::WebResponse response)
+                         { onIndex(id, response); });
+
+  auto cached = cache::load(state->entry.repo);
+
+  // Saves the rate limit on frequent restarts
+  if (cached && !m_force && cache::isFresh(*cached))
+  {
+    setReleases(*state, cached->body, "");
+    finishRequest(id);
+    return;
+  }
+
+  m_releaseTasks[id].spawn(
+      github::fetchReleases(state->entry.repo, cached ? cached->etag : ""),
+      [this, id](web::WebResponse response)
+      { onRelease(id, response); });
 }
 
 void Manager::onRelease(std::string const &id, web::WebResponse const &response)
 {
   if (auto state = findMut(id))
   {
-    auto release = github::parseLatest(
-        response, id, Mod::get()->getSettingValue<bool>("include-prereleases"));
+    auto const &repo = state->entry.repo;
+    auto cached = cache::load(repo);
 
-    if (release.isOk())
+    if (response.code() == 304 && cached)
     {
-      state->release = release.unwrap();
-      state->error.clear();
+      cache::save(repo, *cached); // still fresh
+      setReleases(*state, cached->body, "");
+    }
+    else if (response.ok())
+    {
+      auto body = response.string().unwrapOr("");
+      cache::save(repo, {std::string(response.header("ETag").value_or("")), body});
+      setReleases(*state, body, "");
+    }
+    // Offline or rate limited: the last known releases are better than nothing
+    else if (cached)
+    {
+      log::warn("{}: {}, using cached releases", id, github::describeError(response));
+      setReleases(*state, cached->body, "");
     }
     else
-    {
-      state->release.reset();
-      state->error = release.unwrapErr();
-      log::warn("{}: {}", id, state->error);
-    }
-
-    updateStatus(*state);
+      setReleases(*state, std::nullopt, github::describeError(response));
   }
 
-  m_loading = false;
+  finishRequest(id);
+}
 
-  for (auto const &mod : m_mods)
+void Manager::setReleases(ModState &state, std::optional<std::string> const &body, std::string error)
+{
+  state.releases.clear();
+  state.error = std::move(error);
+
+  if (!body)
   {
-    if (mod.status == Status::Loading)
-      m_loading = true;
+    log::warn("{}: {}", state.entry.id, state.error);
+    return;
   }
 
+  auto releases = github::parseReleases(
+      *body, state.entry.id, Mod::get()->getSettingValue<bool>("include-prereleases"));
+
+  if (releases.isOk())
+    state.releases = releases.unwrap();
+  else
+    state.error = releases.unwrapErr();
+}
+
+void Manager::onIndex(std::string const &id, web::WebResponse const &response)
+{
+  if (auto state = findMut(id))
+    state->indexVersion = geodeindex::parseLatest(response);
+
+  finishRequest(id);
+}
+
+void Manager::finishRequest(std::string const &id)
+{
+  if (auto state = findMut(id); state && state->pending > 0)
+  {
+    if (--state->pending == 0)
+      updateStatus(*state);
+  }
+
+  m_loading = std::ranges::any_of(m_mods, [](auto const &mod)
+                                  { return mod.pending > 0; });
   m_loaded = !m_loading;
 
   notify();
@@ -141,7 +209,7 @@ void Manager::onRelease(std::string const &id, web::WebResponse const &response)
 
 void Manager::updateStatus(ModState &state)
 {
-  if (state.status == Status::Downloading || state.status == Status::Downloaded)
+  if (isBusy(state.status))
     return;
 
   if (auto mod = Loader::get()->getInstalledMod(state.entry.id))
@@ -149,12 +217,23 @@ void Manager::updateStatus(ModState &state)
   else
     state.installed.reset();
 
-  if (!state.release)
-    state.status = state.error == "No releases yet" ? Status::NoRelease : Status::Error;
-  else if (!state.installed)
+  auto latest = state.latest();
+  auto const &index = state.indexVersion;
+  auto const &installed = state.installed;
+
+  // GitHub has nothing newer than the Geode Index: let Geode handle it
+  if (index && (!latest || latest->version <= *index))
+  {
+    state.status = installed && *index <= *installed ? Status::UpToDate : Status::OnIndex;
+    return;
+  }
+
+  if (!latest)
+    state.status = state.error.empty() ? Status::NoRelease : Status::Error;
+  else if (!installed)
     state.status = Status::NotInstalled;
-  // A newer build from the Geode Index is left alone
-  else if (*state.installed < state.release->version)
+  // A newer build installed some other way is left alone
+  else if (*installed < latest->version)
     state.status = Status::UpdateAvailable;
   else
     state.status = Status::UpToDate;
@@ -162,21 +241,85 @@ void Manager::updateStatus(ModState &state)
 
 // ! --- Installing --- !
 
-void Manager::install(std::string const &id)
+void Manager::install(std::string const &id, std::optional<std::string> tag)
 {
   auto state = findMut(id);
 
-  if (!state || !state->release || state->status == Status::Downloading)
+  if (!state || state->status == Status::Downloading || state->releases.empty())
     return;
 
+  auto release = state->releases.front();
+
+  if (tag)
+  {
+    auto it = std::ranges::find_if(state->releases, [&](auto const &release)
+                                   { return release.tag == *tag; });
+
+    if (it == state->releases.end())
+      return;
+
+    release = *it;
+  }
+
   state->status = Status::Downloading;
+  state->progress = 0.f;
+  state->missingDeps.clear();
+  m_restartPrompted.erase(id);
   notify();
 
-  m_downloadTasks[id].spawn(github::download(state->release->assetUrl), [this, id](web::WebResponse response)
-                            { onDownload(id, response); });
+  // Progress callbacks already run on the main thread
+  auto onProgress = [this, id](web::WebProgress const &progress)
+  {
+    if (auto state = findMut(id))
+      state->progress = progress.downloadProgress().value_or(0.f) / 100.f;
+  };
+
+  m_downloadTasks[id].spawn(
+      github::download(release.assetUrl, std::move(onProgress)),
+      [this, id, release](web::WebResponse response)
+      { onDownload(id, release, response); });
 }
 
-void Manager::onDownload(std::string const &id, web::WebResponse const &response)
+void Manager::installAll()
+{
+  std::vector<std::string> ids;
+
+  for (auto const &state : m_mods)
+  {
+    if (state.status == Status::UpdateAvailable)
+      ids.push_back(state.entry.id);
+  }
+
+  for (auto const &id : ids)
+    install(id);
+}
+
+static std::vector<std::string> findMissingDeps(ModMetadata const &metadata, std::vector<ModState> const &mods)
+{
+  std::vector<std::string> missing;
+
+  for (auto const &dep : metadata.getDependencies())
+  {
+    if (!dep.isRequired() || dep.getID() == "geode.loader")
+      continue;
+
+    // Already downloaded by the manager, loads after the restart
+    auto pending = std::ranges::find_if(mods, [&](auto const &mod)
+                                        { return mod.entry.id == dep.getID() && mod.status == Status::Downloaded; });
+
+    if (pending != mods.end())
+      continue;
+
+    auto mod = Loader::get()->getInstalledMod(dep.getID());
+
+    if (!mod || !dep.getVersion().compare(mod->getVersion()))
+      missing.push_back(dep.getID());
+  }
+
+  return missing;
+}
+
+void Manager::onDownload(std::string const &id, github::Release const &release, web::WebResponse const &response)
 {
   auto state = findMut(id);
 
@@ -186,6 +329,18 @@ void Manager::onDownload(std::string const &id, web::WebResponse const &response
   if (!response.ok())
     return failInstall(*state, fmt::format("Download failed ({})", response.code()));
 
+  // ! --- Integrity --- !
+  if (!release.sha256.empty())
+  {
+    auto actual = geode::sha256(response.data()).toString();
+
+    if (actual != release.sha256)
+    {
+      log::error("{}: hash mismatch, expected {}, got {}", id, release.sha256, actual);
+      return failInstall(*state, "The download is corrupted (hash mismatch)");
+    }
+  }
+
   auto target = dirs::getModsDir() / (id + ".geode");
   auto temp = dirs::getModsDir() / (id + ".geode.tmp");
 
@@ -193,6 +348,24 @@ void Manager::onDownload(std::string const &id, web::WebResponse const &response
     return failInstall(*state, fmt::format("Can't save the file: {}", res.unwrapErr()));
 
   std::error_code ec;
+
+  // ! --- Compatibility --- !
+  auto metadata = ModMetadata::createFromGeodeFile(temp);
+  std::optional<std::string> invalid;
+
+  if (metadata.hasErrors())
+    invalid = fmt::format("Invalid mod package: {}", metadata.getErrors().front());
+  else if (metadata.getID() != id)
+    invalid = fmt::format("The package is for another mod ({})", metadata.getID());
+  else if (auto compatible = metadata.checkTargetVersions(); compatible.isErr())
+    invalid = fmt::format("{} isn't compatible: {}", release.tag, compatible.unwrapErr());
+
+  if (invalid)
+  {
+    std::filesystem::remove(temp, ec);
+    return failInstall(*state, *invalid);
+  }
+
   std::filesystem::rename(temp, target, ec);
 
   if (ec)
@@ -202,13 +375,67 @@ void Manager::onDownload(std::string const &id, web::WebResponse const &response
   }
 
   state->status = Status::Downloaded;
+  state->downloadedTag = release.tag;
   state->error.clear();
+  state->missingDeps = findMissingDeps(metadata, m_mods);
   notify();
+
+  // One prompt for the whole batch
+  bool downloading = std::ranges::any_of(m_mods, [](auto const &mod)
+                                         { return mod.status == Status::Downloading; });
+
+  if (!downloading)
+    promptRestart();
+}
+
+void Manager::promptRestart()
+{
+  std::vector<std::string> installed;
+  std::vector<std::string> missing;
+
+  for (auto const &state : m_mods)
+  {
+    if (state.status != Status::Downloaded || m_restartPrompted.contains(state.entry.id))
+      continue;
+
+    m_restartPrompted.insert(state.entry.id);
+    installed.push_back(fmt::format("<cg>{}</c> {}", state.entry.name, state.downloadedTag));
+
+    for (auto const &dep : state.missingDeps)
+    {
+      if (std::ranges::find(missing, dep) == missing.end())
+        missing.push_back(dep);
+    }
+  }
+
+  if (installed.empty())
+    return;
+
+  auto list = fmt::format("{}", fmt::join(installed, ", "));
+
+  // ! --- Dependencies --- !
+  if (!missing.empty())
+  {
+    createQuickPopup(
+        "Dependencies required",
+        fmt::format("{} installed, but {} also needed: <cy>{}</c>\n"
+                    "Install them from the Geode Index, then restart the game.",
+                    list, missing.size() == 1 ? "this mod is" : "these mods are",
+                    fmt::join(missing, ", ")),
+        "Later", "Install",
+        [missing](auto, bool install)
+        {
+          if (install)
+            (void)openInfoPopup(missing.front());
+        });
+
+    return;
+  }
 
   createQuickPopup(
       "Restart required",
-      fmt::format("<cg>{}</c> {} was installed. Restart the game to load it.",
-                  state->entry.name, state->release->tag),
+      fmt::format("{} installed. Restart the game to load {}.",
+                  list, installed.size() == 1 ? "it" : "them"),
       "Later", "Restart",
       [](auto, bool restart)
       {
@@ -226,6 +453,13 @@ void Manager::failInstall(ModState &state, std::string error)
   notify();
 
   FLAlertLayer::create("Install failed", state.error, "OK")->show();
+
+  // Mods that did download in the same batch still need their prompt
+  bool downloading = std::ranges::any_of(m_mods, [](auto const &mod)
+                                         { return mod.status == Status::Downloading; });
+
+  if (!downloading)
+    promptRestart();
 }
 
 // ! --- State --- !
@@ -282,6 +516,8 @@ char const *manager::statusText(Status status)
     return "Update available";
   case Status::UpToDate:
     return "Up to date";
+  case Status::OnIndex:
+    return "On the Geode Index";
   case Status::NoRelease:
     return "No releases yet";
   case Status::Downloading:
@@ -293,4 +529,33 @@ char const *manager::statusText(Status status)
   }
 
   return "";
+}
+
+std::string manager::changelog(ModState const &state)
+{
+  static constexpr size_t MAX_RELEASES = 10;
+
+  std::string text;
+  size_t count = 0;
+
+  for (auto const &release : state.releases)
+  {
+    if (state.installed && release.version <= *state.installed)
+      break;
+
+    if (count++ == MAX_RELEASES)
+      break;
+
+    text += fmt::format("# {}\n\n{}\n\n", release.tag, release.body.empty() ? "No notes." : release.body);
+
+    // Not installed: only what's new in the latest
+    if (!state.installed)
+      break;
+  }
+
+  // Up to date: show the installed release's notes
+  if (text.empty() && state.latest())
+    text = fmt::format("# {}\n\n{}", state.latest()->tag, state.latest()->body);
+
+  return text;
 }

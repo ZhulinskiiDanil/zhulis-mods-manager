@@ -16,6 +16,9 @@ namespace registry
   // Used when the remote registry can't be fetched
   std::vector<ModEntry> fallback();
 
+  // True when the user changed the registry URL setting
+  bool isCustomUrl();
+
   arc::Future<geode::utils::web::WebResponse> fetch();
   geode::Result<std::vector<ModEntry>> parse(geode::utils::web::WebResponse const &response);
 }
