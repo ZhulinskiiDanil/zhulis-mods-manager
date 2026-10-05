@@ -10,6 +10,7 @@ A [Geode](https://geode-sdk.org) mod that installs and updates **Zhulis** mods s
 - Mods with a newer GitHub release get a **GitHub vX** label in the mods list and an update button in their info popup
 - **Update all**, download progress and a single restart prompt per batch
 - Changelog of every release newer than the installed one, and a versions list to install any release or roll back
+- **Nightly builds**: the versions list also offers the build of the latest commit on the default branch whose CI run passed and uploaded the **Build Output** artifact. Once a nightly is installed, newer nightlies show up as updates until a newer release comes out
 - Checks for updates on startup and shows a notification
 - Updates itself: the manager is always tracked and asks to update when a new version is out
 - Never downgrades on its own: if the installed version is newer than the GitHub release, it's left alone. Mods that are on the Geode Index with the same or a newer version are left to Geode
@@ -18,9 +19,11 @@ A [Geode](https://geode-sdk.org) mod that installs and updates **Zhulis** mods s
 
 - A release is installed only if it's compatible with your GD and Geode versions (checked from the mod's `mod.json` inside the `.geode`)
 - Downloads are verified against the SHA-256 digest GitHub provides for release assets
+- Nightly builds are only taken from successful CI runs of the repo itself (not forks). GitHub requires a token to download artifacts, so the zip comes through [nightly.link](https://nightly.link) and is checked against the artifact digest from the GitHub API before it's unpacked
 - Missing required dependencies are reported, with a shortcut to install them from the Geode Index
 - Only `ZhulinskiiDanil/*` repos are trusted, entries pointing anywhere else are skipped even with a custom registry URL
 - GitHub allows 60 unauthenticated requests an hour (a `304 Not Modified` counts too), so releases are cached for 15 minutes. The refresh button skips the cache; offline or rate limited, the last known releases are used
+- A nightly lookup takes 3-5 requests, so it only happens when the versions list is opened or a nightly is installed, and is cached for 15 minutes too
 
 ## Installation
 
@@ -42,6 +45,7 @@ To add a mod:
 
 1. Add an entry with the mod `id`, display `name` and GitHub `repo` (`ZhulinskiiDanil/<name>`, must be public)
 2. Publish releases in that repo with a tag the mod version can be parsed from (`v1.2.3`) and the asset named `<mod-id>.geode`
+3. For nightly builds, run a workflow on pushes to the default branch that uploads a **Build Output** artifact with `<mod-id>.geode` inside (like this repo's [workflow](.github/workflows/multi-platform.yml)). Installing the [nightly.link GitHub App](https://github.com/apps/nightly-link) on the repo keeps its downloads off nightly.link's shared rate limit
 
 If the registry can't be fetched, a built-in copy from [`src/registry/index.cpp`](src/registry/index.cpp) is used.
 
@@ -75,12 +79,12 @@ On Windows build with clang (as `geode build --ninja` does), MSVC 19.50 crashes 
 src/
   main.cpp                  startup update check and notifications
   registry/                 tracked mods list (remote + built-in)
-  github/                   GitHub releases API and downloads
-  cache/                    releases cache (ETag, 15 minute TTL)
+  github/                   GitHub releases and nightly builds API, downloads
+  cache/                    releases and nightly cache (15 minute TTL)
   geodeindex/               latest version on the Geode Index
   manager/                  mod states, install/update logic
   hooks/ModsLayer.cpp       Geode mods page button and UI events
   popups/ManagerPopup/      the mods list popup
-  popups/VersionsPopup/     every release of a mod, install or roll back
+  popups/VersionsPopup/     nightly build and every release of a mod, install or roll back
 mods.json                   tracked mods registry
 ```

@@ -76,7 +76,7 @@ static void applyModItem(CCNode *item, std::string_view id)
     return;
   }
 
-  auto text = fmt::format("GitHub {}", state->latest()->tag);
+  auto text = fmt::format("GitHub {}", state->updateName());
 
   if (label)
   {
@@ -114,7 +114,7 @@ static void applyModPopup(FLAlertLayer *popup, std::string_view id)
     return;
 
   auto spr = ButtonSprite::create(
-      fmt::format("GitHub {}", state->latest()->tag).c_str(), "bigFont.fnt", "GJ_button_01.png", .8f);
+      fmt::format("GitHub {}", state->updateName()).c_str(), "bigFont.fnt", "GJ_button_01.png", .8f);
   spr->setScale(.35f);
 
   auto button = CCMenuItemExt::createSpriteExtra(spr, [modID = std::string(id)](auto)

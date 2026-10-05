@@ -182,15 +182,20 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
 
   std::string versions = state.installed ? state.installed->toVString() : "-";
 
+  if (state.installed && state.installedNightly)
+    versions += fmt::format(" ({})", state.installedNightly->substr(0, 7));
+
   if (state.status == Status::Downloaded)
     versions += " -> " + state.downloadedTag;
   else if (state.status == Status::OnIndex && state.indexVersion)
     versions += " -> " + state.indexVersion->toVString();
+  else if (state.status == Status::UpdateAvailable)
+    versions += " -> " + state.updateName();
   else if (state.latest() && state.status != Status::UpToDate)
     versions += " -> " + state.latest()->tag;
 
   auto versionLabel = CCLabelBMFont::create(versions.c_str(), "goldFont.fnt");
-  versionLabel->setScale(.45f);
+  versionLabel->limitLabelWidth(width * .35f, .45f, .1f);
   row->addChildAtPosition(versionLabel, Anchor::Left, {8.f, -9.f}, {0.f, .5f});
 
   std::string status = statusText(state.status);
@@ -234,7 +239,11 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
         MDPopup::create(fmt::format("{} changelog", state->entry.name), changelog(*state), "OK")->show(); });
     changelogBtn->setID("changelog-button");
     menu->addChild(changelogBtn);
+  }
 
+  // Also without releases: the nightly build is there
+  if (state.status != Status::Loading)
+  {
     auto versionsBtn = createIconButton("geode.loader/download.png", [id]
                                         {
       if (auto popup = VersionsPopup::create(id))
@@ -263,7 +272,14 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
     { (void)openInfoPopup(id); };
     break;
   case Status::Error:
-    if (state.latest())
+    if (state.installingNightly && state.nightly)
+    {
+      action = "Retry";
+      buttonBG = "GJ_button_06.png";
+      onAction = [id]
+      { Manager::get().installNightly(id); };
+    }
+    else if (state.latest())
     {
       action = "Retry";
       buttonBG = "GJ_button_06.png";

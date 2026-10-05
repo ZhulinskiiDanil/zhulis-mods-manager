@@ -19,6 +19,44 @@ static bool isBusy(Status status)
   return status == Status::Downloading || status == Status::Downloaded;
 }
 
+// ! --- Installed nightlies --- !
+// A nightly build has the version of the last release, so its commit is saved along with it
+
+static std::string nightlyKey(std::string const &id, std::string_view field)
+{
+  return fmt::format("nightly-{}-{}", id, field);
+}
+
+// Commit of the installed build, if it's still the nightly the manager installed
+static std::optional<std::string> installedNightly(std::string const &id)
+{
+  auto mod = Loader::get()->getInstalledMod(id);
+  auto sha = Mod::get()->getSavedValue<std::string>(nightlyKey(id, "sha"));
+  auto version = Mod::get()->getSavedValue<std::string>(nightlyKey(id, "version"));
+
+  if (!mod || sha.empty() || version != mod->getVersion().toVString())
+    return std::nullopt;
+
+  return sha;
+}
+
+// An empty `sha` forgets it, after a release is installed
+static void saveInstalledNightly(std::string const &id, std::string const &sha, VersionInfo const &version)
+{
+  Mod::get()->setSavedValue(nightlyKey(id, "sha"), sha);
+  Mod::get()->setSavedValue(nightlyKey(id, "version"), sha.empty() ? std::string() : version.toVString());
+}
+
+static std::string nightlyCacheKey(std::string const &repo)
+{
+  return repo + "-nightly";
+}
+
+static std::optional<github::Nightly> nightlyFromCache(cache::Entry const &entry)
+{
+  return github::nightlyFromJson(matjson::parse(entry.body).unwrapOrDefault());
+}
+
 // ! --- Fetching --- !
 
 void Manager::refresh(bool force)
@@ -83,15 +121,29 @@ void Manager::setMods(std::vector<registry::ModEntry> entries)
 
   for (auto &entry : entries)
   {
+    auto old = findMut(entry.id);
+
     // Keep download state across refreshes
-    if (auto old = findMut(entry.id); old && isBusy(old->status))
+    if (old && isBusy(old->status))
     {
       old->entry = std::move(entry);
       mods.push_back(std::move(*old));
       continue;
     }
 
-    mods.push_back({std::move(entry)});
+    ModState state{std::move(entry)};
+
+    // A nightly lookup may still be running
+    if (old)
+    {
+      state.nightly = std::move(old->nightly);
+      state.nightlyChecked = old->nightlyChecked;
+      state.nightlyLoading = old->nightlyLoading;
+      state.nightlyError = std::move(old->nightlyError);
+      state.installingNightly = old->installingNightly;
+    }
+
+    mods.push_back(std::move(state));
   }
 
   m_mods = std::move(mods);
@@ -112,7 +164,13 @@ void Manager::fetchMod(std::string const &id)
   if (!state)
     return;
 
-  state->pending = 2;
+  // On the nightly channel, or the user already looked at the nightly
+  bool nightly = installedNightly(id) || state->nightlyChecked;
+
+  state->pending = nightly ? 3 : 2;
+
+  if (nightly)
+    loadNightly(id, true);
 
   m_indexTasks[id].spawn(geodeindex::fetchLatest(id), [this, id](web::WebResponse response)
                          { onIndex(id, response); });
@@ -192,6 +250,90 @@ void Manager::onIndex(std::string const &id, web::WebResponse const &response)
   finishRequest(id);
 }
 
+void Manager::fetchNightly(std::string const &id)
+{
+  if (!m_nightlyTasks[id].isPending())
+    loadNightly(id, false);
+}
+
+void Manager::loadNightly(std::string const &id, bool counted)
+{
+  auto state = findMut(id);
+
+  if (!state)
+    return;
+
+  auto key = nightlyCacheKey(state->entry.repo);
+  auto cached = cache::load(key);
+
+  // Several requests per lookup, the cache matters even more than for releases
+  if (cached && !(counted && m_force) && cache::isFresh(*cached))
+  {
+    state->nightly = nightlyFromCache(*cached);
+    state->nightlyChecked = true;
+    state->nightlyLoading = false;
+    state->nightlyError.clear();
+    m_nightlyTasks[id].cancel();
+
+    if (counted)
+      return finishRequest(id);
+
+    if (state->pending == 0)
+      updateStatus(*state);
+
+    notify();
+    return;
+  }
+
+  state->nightlyLoading = true;
+
+  if (!counted)
+    notify();
+
+  m_nightlyTasks[id].spawn(
+      github::fetchNightly(state->entry.repo),
+      [this, id, counted](Result<std::optional<github::Nightly>> result)
+      { onNightly(id, std::move(result), counted); });
+}
+
+void Manager::onNightly(std::string const &id, Result<std::optional<github::Nightly>> result, bool counted)
+{
+  if (auto state = findMut(id))
+  {
+    auto key = nightlyCacheKey(state->entry.repo);
+
+    state->nightlyChecked = true;
+    state->nightlyLoading = false;
+    state->nightlyError.clear();
+
+    if (result.isOk())
+    {
+      state->nightly = std::move(result).unwrap();
+      cache::save(key, {"", github::nightlyToJson(state->nightly).dump(matjson::NO_INDENTATION)});
+    }
+    else if (auto cached = cache::load(key))
+    {
+      log::warn("{}: {}, using cached nightly", id, result.unwrapErr());
+      state->nightly = nightlyFromCache(*cached);
+    }
+    else
+    {
+      log::warn("{}: {}", id, result.unwrapErr());
+      state->nightly.reset();
+      state->nightlyError = std::move(result).unwrapErr();
+    }
+
+    // A newer nightly can be an update on its own
+    if (!counted && state->pending == 0)
+      updateStatus(*state);
+  }
+
+  if (counted)
+    finishRequest(id);
+  else
+    notify();
+}
+
 void Manager::finishRequest(std::string const &id)
 {
   if (auto state = findMut(id); state && state->pending > 0)
@@ -217,9 +359,22 @@ void Manager::updateStatus(ModState &state)
   else
     state.installed.reset();
 
+  state.installedNightly = installedNightly(state.entry.id);
+  state.nightlyUpdate = false;
+
   auto latest = state.latest();
   auto const &index = state.indexVersion;
   auto const &installed = state.installed;
+
+  // ! --- Nightly channel --- !
+  // A newer build of the default branch, unless a release or the Geode Index got ahead of it
+  if (installed && state.installedNightly && state.nightly && state.nightly->sha != *state.installedNightly &&
+      !(latest && *installed < latest->version) && !(index && *installed < *index))
+  {
+    state.status = Status::UpdateAvailable;
+    state.nightlyUpdate = true;
+    return;
+  }
 
   // GitHub has nothing newer than the Geode Index: let Geode handle it
   if (index && (!latest || latest->version <= *index))
@@ -245,7 +400,13 @@ void Manager::install(std::string const &id, std::optional<std::string> tag)
 {
   auto state = findMut(id);
 
-  if (!state || state->status == Status::Downloading || state->releases.empty())
+  if (!state || state->status == Status::Downloading)
+    return;
+
+  if (!tag && state->nightlyUpdate)
+    return installNightly(id);
+
+  if (state->releases.empty())
     return;
 
   auto release = state->releases.front();
@@ -261,23 +422,49 @@ void Manager::install(std::string const &id, std::optional<std::string> tag)
     release = *it;
   }
 
-  state->status = Status::Downloading;
-  state->progress = 0.f;
-  state->missingDeps.clear();
-  m_restartPrompted.erase(id);
-  notify();
+  startDownload(*state, false);
 
+  m_downloadTasks[id].spawn(
+      github::download(release.assetUrl, progressCallback(id)),
+      [this, id, release](web::WebResponse response)
+      { onDownload(id, release, response); });
+}
+
+void Manager::installNightly(std::string const &id)
+{
+  auto state = findMut(id);
+
+  if (!state || state->status == Status::Downloading || !state->nightly)
+    return;
+
+  auto nightly = *state->nightly;
+
+  startDownload(*state, true);
+
+  m_downloadTasks[id].spawn(
+      github::download(nightly.assetUrl, progressCallback(id)),
+      [this, id, nightly](web::WebResponse response)
+      { onNightlyDownload(id, nightly, response); });
+}
+
+void Manager::startDownload(ModState &state, bool nightly)
+{
+  state.status = Status::Downloading;
+  state.progress = 0.f;
+  state.missingDeps.clear();
+  state.installingNightly = nightly;
+  m_restartPrompted.erase(state.entry.id);
+  notify();
+}
+
+Function<void(web::WebProgress const &)> Manager::progressCallback(std::string const &id)
+{
   // Progress callbacks already run on the main thread
-  auto onProgress = [this, id](web::WebProgress const &progress)
+  return [this, id](web::WebProgress const &progress)
   {
     if (auto state = findMut(id))
       state->progress = progress.downloadProgress().value_or(0.f) / 100.f;
   };
-
-  m_downloadTasks[id].spawn(
-      github::download(release.assetUrl, std::move(onProgress)),
-      [this, id, release](web::WebResponse response)
-      { onDownload(id, release, response); });
 }
 
 void Manager::installAll()
@@ -341,12 +528,69 @@ void Manager::onDownload(std::string const &id, github::Release const &release, 
     }
   }
 
-  auto target = dirs::getModsDir() / (id + ".geode");
   auto temp = dirs::getModsDir() / (id + ".geode.tmp");
 
   if (auto res = response.into(temp); res.isErr())
     return failInstall(*state, fmt::format("Can't save the file: {}", res.unwrapErr()));
 
+  installPackage(*state, temp, release.tag, std::nullopt);
+}
+
+void Manager::onNightlyDownload(std::string const &id, github::Nightly const &nightly, web::WebResponse const &response)
+{
+  auto state = findMut(id);
+
+  if (!state)
+    return;
+
+  if (!response.ok())
+    return failInstall(*state, fmt::format("Download failed ({})", response.code()));
+
+  // ! --- Integrity --- !
+  // The zip comes through nightly.link, GitHub's digest is what makes it trustworthy
+  auto actual = geode::sha256(response.data()).toString();
+
+  if (nightly.sha256.empty() || actual != nightly.sha256)
+  {
+    log::error("{}: nightly hash mismatch, expected {}, got {}", id, nightly.sha256, actual);
+    return failInstall(*state, "The download is corrupted (hash mismatch)");
+  }
+
+  // ! --- Artifact --- !
+  auto archive = utils::file::Unzip::create(response.data());
+
+  if (archive.isErr())
+    return failInstall(*state, fmt::format("Invalid build archive: {}", archive.unwrapErr()));
+
+  auto &unzip = archive.unwrap();
+  auto entries = unzip.getEntries();
+  auto entry = std::ranges::find(entries, std::filesystem::path(id + ".geode"));
+
+  if (entry == entries.end())
+    entry = std::ranges::find_if(entries, [](auto const &path)
+                                 { return path.extension() == ".geode"; });
+
+  if (entry == entries.end())
+    return failInstall(*state, "The build has no .geode file");
+
+  auto data = unzip.extract(*entry);
+
+  if (data.isErr())
+    return failInstall(*state, fmt::format("Can't unpack the build: {}", data.unwrapErr()));
+
+  auto temp = dirs::getModsDir() / (id + ".geode.tmp");
+
+  if (auto res = utils::file::writeBinary(temp, data.unwrap()); res.isErr())
+    return failInstall(*state, fmt::format("Can't save the file: {}", res.unwrapErr()));
+
+  installPackage(*state, temp, nightly.label(), nightly.sha);
+}
+
+void Manager::installPackage(ModState &state, std::filesystem::path const &temp,
+                             std::string label, std::optional<std::string> nightlySha)
+{
+  auto const &id = state.entry.id;
+  auto target = dirs::getModsDir() / (id + ".geode");
   std::error_code ec;
 
   // ! --- Compatibility --- !
@@ -358,12 +602,12 @@ void Manager::onDownload(std::string const &id, github::Release const &release, 
   else if (metadata.getID() != id)
     invalid = fmt::format("The package is for another mod ({})", metadata.getID());
   else if (auto compatible = metadata.checkTargetVersions(); compatible.isErr())
-    invalid = fmt::format("{} isn't compatible: {}", release.tag, compatible.unwrapErr());
+    invalid = fmt::format("{} isn't compatible: {}", label, compatible.unwrapErr());
 
   if (invalid)
   {
     std::filesystem::remove(temp, ec);
-    return failInstall(*state, *invalid);
+    return failInstall(state, *invalid);
   }
 
   std::filesystem::rename(temp, target, ec);
@@ -371,13 +615,15 @@ void Manager::onDownload(std::string const &id, github::Release const &release, 
   if (ec)
   {
     std::filesystem::remove(temp, ec);
-    return failInstall(*state, "Can't replace the installed mod file");
+    return failInstall(state, "Can't replace the installed mod file");
   }
 
-  state->status = Status::Downloaded;
-  state->downloadedTag = release.tag;
-  state->error.clear();
-  state->missingDeps = findMissingDeps(metadata, m_mods);
+  saveInstalledNightly(id, nightlySha.value_or(""), metadata.getVersion());
+
+  state.status = Status::Downloaded;
+  state.downloadedTag = std::move(label);
+  state.error.clear();
+  state.missingDeps = findMissingDeps(metadata, m_mods);
   notify();
 
   // One prompt for the whole batch

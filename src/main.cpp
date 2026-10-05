@@ -17,7 +17,7 @@ static void notifyUpdates()
     createQuickPopup(
         "Zhulis Mods Manager",
         fmt::format("A new version of the manager is out: <cy>{}</c> -> <cg>{}</c>\nUpdate now?",
-                    Mod::get()->getVersion().toVString(), self->latest()->tag),
+                    Mod::get()->getVersion().toVString(), self->updateName()),
         "Later", "Update",
         [](auto, bool update)
         {

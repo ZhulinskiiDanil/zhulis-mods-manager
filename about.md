@@ -11,6 +11,7 @@ The list shows every Zhulis mod with:
 - an <cg>Install</c> / <cg>Update</c> button, or <cg>Update all</c> at the top
 - the changelog of everything new since your version
 - a versions list to install any release or <cy>roll back</c>
+- the <cy>nightly</c> build: the latest commit that passed CI, for trying fixes before they're released
 
 Mods with a newer GitHub release also get a <cy>GitHub vX</c> label in the mods list and an update button in their info popup.
 
@@ -30,6 +31,8 @@ Before installing, the manager makes sure the release:
 - is <cg>compatible</c> with your GD and Geode versions
 - matches the <cg>SHA-256</c> digest from GitHub
 - has its required <cg>dependencies</c>, missing ones can be installed from the Geode Index
+
+Nightly builds are untested and may be unstable. Once you install one, newer nightlies are offered as updates until the next release.
 
 If you already have a newer version, the manager leaves it alone. Mods that are on the Geode Index with the same or a newer version are left to Geode.
 

@@ -1,3 +1,10 @@
+# v1.2.0
+
+ * Nightly builds: the versions list offers the build of the latest commit that passed CI, from its "Build Output" artifact
+ * With a nightly installed, newer nightlies are offered as updates until a newer release comes out
+ * Nightly downloads are verified with the artifact's SHA-256 digest from GitHub
+ * The versions list is available for mods without releases too
+
 # v1.1.1
 
  * Fixed a crash when opening the Geode mods page

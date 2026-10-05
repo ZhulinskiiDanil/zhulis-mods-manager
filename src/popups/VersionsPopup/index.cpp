@@ -6,6 +6,7 @@ static constexpr float POPUP_WIDTH = 300.f;
 static constexpr float POPUP_HEIGHT = 240.f;
 static constexpr float PADDING = 12.f;
 static constexpr float ROW_HEIGHT = 30.f;
+static constexpr float NIGHTLY_ROW_HEIGHT = 36.f;
 
 VersionsPopup *VersionsPopup::create(std::string modID)
 {
@@ -19,6 +20,12 @@ VersionsPopup *VersionsPopup::create(std::string modID)
 
   CC_SAFE_DELETE(ret);
   return nullptr;
+}
+
+VersionsPopup::~VersionsPopup()
+{
+  if (m_subscription)
+    Manager::get().unsubscribe(*m_subscription);
 }
 
 bool VersionsPopup::init(std::string modID)
@@ -40,26 +47,58 @@ bool VersionsPopup::init(std::string modID)
   listBG->setContentSize(listSize / listBG->getScale());
   m_mainLayer->addChildAtPosition(listBG, Anchor::Center, {0.f, -10.f});
 
-  auto list = ScrollLayer::create(listSize);
-  list->ignoreAnchorPointForPosition(false);
-  list->m_contentLayer->setLayout(ScrollLayer::createDefaultListLayout(3.f));
-  m_mainLayer->addChildAtPosition(list, Anchor::Center, {0.f, -10.f});
+  m_list = ScrollLayer::create(listSize);
+  m_list->ignoreAnchorPointForPosition(false);
+  m_list->m_contentLayer->setLayout(ScrollLayer::createDefaultListLayout(3.f));
+  m_mainLayer->addChildAtPosition(m_list, Anchor::Center, {0.f, -10.f});
 
-  for (auto const &release : state->releases)
-    list->m_contentLayer->addChild(createRow(*state, release, listSize.width));
+  // Deferred: a click handler may trigger a rebuild that removes its own button
+  m_subscription = Manager::get().subscribe([this]
+                                            { scheduleOnce(schedule_selector(VersionsPopup::onRebuild), 0.f); });
 
-  list->m_contentLayer->updateLayout();
-  list->scrollToTop();
+  rebuildList();
+  m_list->scrollToTop();
+
+  Manager::get().fetchNightly(m_modID);
 
   return true;
 }
 
-CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &release, float width)
+void VersionsPopup::rebuildList()
+{
+  auto state = Manager::get().find(m_modID);
+  auto content = m_list->m_contentLayer;
+
+  if (!state)
+    return;
+
+  // Keep the scroll position across rebuilds
+  float fromTop = content->getPositionY() + content->getContentHeight();
+  float width = m_list->getContentWidth();
+
+  content->removeAllChildren();
+  content->addChild(createNightlyRow(*state, width));
+
+  for (auto const &release : state->releases)
+    content->addChild(createRow(*state, release, width));
+
+  content->updateLayout();
+
+  float minY = m_list->getContentHeight() - content->getContentHeight();
+  content->setPositionY(std::clamp(fromTop - content->getContentHeight(), minY, 0.f));
+}
+
+void VersionsPopup::onRebuild(float)
+{
+  rebuildList();
+}
+
+CCNode *VersionsPopup::createRowBase(std::string const &id, float width, float height)
 {
   auto row = CCNode::create();
-  row->setContentSize({width, ROW_HEIGHT});
+  row->setContentSize({width, height});
   row->setAnchorPoint({.5f, .5f});
-  row->setID(release.tag);
+  row->setID(id);
 
   auto bg = NineSlice::create("square02b_001.png");
   bg->setColor({0, 0, 0});
@@ -67,6 +106,96 @@ CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &r
   bg->setScale(.35f);
   bg->setContentSize(row->getContentSize() / bg->getScale());
   row->addChildAtPosition(bg, Anchor::Center);
+
+  return row;
+}
+
+static CCMenu *createActionMenu(CCNode *row, float width, float height)
+{
+  auto menu = CCMenu::create();
+  menu->setContentSize({width * .3f, height});
+  menu->setAnchorPoint({1.f, .5f});
+  menu->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::End)->setGap(4.f));
+  row->addChildAtPosition(menu, Anchor::Right, {-6.f, 0.f});
+
+  return menu;
+}
+
+static CCLabelBMFont *createInstalledLabel()
+{
+  auto label = CCLabelBMFont::create("Installed", "chatFont.fnt");
+  label->setScale(.6f);
+  label->setColor({120, 255, 120});
+  return label;
+}
+
+// ! --- Nightly --- !
+
+CCNode *VersionsPopup::createNightlyRow(ModState const &state, float width)
+{
+  auto row = createRowBase("nightly", width, NIGHTLY_ROW_HEIGHT);
+
+  auto title = CCLabelBMFont::create("Nightly", "goldFont.fnt");
+  title->setScale(.55f);
+  row->addChildAtPosition(title, Anchor::Left, {8.f, 7.f}, {0.f, .5f});
+
+  auto hint = CCLabelBMFont::create("latest commit that passed CI", "chatFont.fnt");
+  hint->setScale(.5f);
+  hint->setColor({255, 200, 90});
+  row->addChildAtPosition(hint, Anchor::Left, {title->getScaledContentWidth() + 14.f, 7.f}, {0.f, .5f});
+
+  auto const &nightly = state.nightly;
+  std::string details;
+
+  if (state.nightlyLoading || !state.nightlyChecked)
+    details = "Checking...";
+  else if (!state.nightlyError.empty())
+    details = state.nightlyError;
+  else if (!nightly)
+    details = "No successful builds yet";
+  else
+    details = fmt::format("{}  {}", nightly->shortSha(), nightly->message);
+
+  auto detailsLabel = CCLabelBMFont::create(details.c_str(), "chatFont.fnt");
+  detailsLabel->limitLabelWidth(width * .65f, .55f, .1f);
+  detailsLabel->setOpacity(200);
+
+  if (!state.nightlyError.empty() && !state.nightlyLoading)
+    detailsLabel->setColor({255, 110, 110});
+
+  row->addChildAtPosition(detailsLabel, Anchor::Left, {8.f, -8.f}, {0.f, .5f});
+
+  if (!nightly || state.nightlyLoading)
+    return row;
+
+  auto menu = createActionMenu(row, width, NIGHTLY_ROW_HEIGHT);
+
+  if (state.installedNightly == nightly->sha)
+    menu->addChild(createInstalledLabel());
+  else
+  {
+    auto spr = ButtonSprite::create(
+        state.installedNightly ? "Update" : "Install", "goldFont.fnt", "GJ_button_01.png", .8f);
+    spr->setScale(.5f);
+
+    auto btn = CCMenuItemExt::createSpriteExtra(spr, [this](auto)
+                                                {
+      Manager::get().installNightly(m_modID);
+      onClose(nullptr); });
+    btn->setID("install-button");
+    menu->addChild(btn);
+  }
+
+  menu->updateLayout();
+
+  return row;
+}
+
+// ! --- Releases --- !
+
+CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &release, float width)
+{
+  auto row = createRowBase(release.tag, width, ROW_HEIGHT);
 
   auto tag = CCLabelBMFont::create(release.tag.c_str(), "goldFont.fnt");
   tag->setScale(.55f);
@@ -80,21 +209,13 @@ CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &r
     row->addChildAtPosition(pre, Anchor::Left, {tag->getScaledContentWidth() + 14.f, 0.f}, {0.f, .5f});
   }
 
-  auto menu = CCMenu::create();
-  menu->setContentSize({width * .5f, ROW_HEIGHT});
-  menu->setAnchorPoint({1.f, .5f});
-  menu->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::End)->setGap(4.f));
-  row->addChildAtPosition(menu, Anchor::Right, {-6.f, 0.f});
+  auto menu = createActionMenu(row, width, ROW_HEIGHT);
 
-  bool installed = state.installed && *state.installed == release.version;
+  // A nightly build has the version of a release but isn't it
+  bool installed = state.installed && *state.installed == release.version && !state.installedNightly;
 
   if (installed)
-  {
-    auto label = CCLabelBMFont::create("Installed", "chatFont.fnt");
-    label->setScale(.6f);
-    label->setColor({120, 255, 120});
-    menu->addChild(label);
-  }
+    menu->addChild(createInstalledLabel());
   else
   {
     bool older = state.installed && release.version < *state.installed;

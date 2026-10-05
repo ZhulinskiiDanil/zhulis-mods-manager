@@ -19,6 +19,21 @@ namespace github
     bool prerelease = false;
   };
 
+  // Nightly builds are this workflow artifact of the default branch
+  constexpr std::string_view NIGHTLY_ARTIFACT = "Build Output";
+
+  // Latest commit of the default branch with a successful CI run and its artifact
+  struct Nightly
+  {
+    std::string sha;      // full commit hash
+    std::string message;  // first line of the commit message
+    std::string assetUrl; // artifact zip through nightly.link, GitHub needs a token for it
+    std::string sha256;   // digest of the zip, from GitHub
+
+    std::string shortSha() const { return sha.substr(0, 7); }
+    std::string label() const { return "nightly " + shortSha(); }
+  };
+
   bool isAllowedRepo(std::string_view repo);
 
   // Shared GET helper, everything about the request is set up before it starts
@@ -30,6 +45,12 @@ namespace github
   // Releases that ship `<modID>.geode` (or any .geode), newest first
   geode::Result<std::vector<Release>> parseReleases(
       std::string const &body, std::string const &modID, bool includePrereleases);
+
+  // Ok(nullopt) when no build of the default branch passed with the artifact
+  arc::Future<geode::Result<std::optional<Nightly>>> fetchNightly(std::string repo);
+
+  matjson::Value nightlyToJson(std::optional<Nightly> const &nightly);
+  std::optional<Nightly> nightlyFromJson(matjson::Value const &json);
 
   // Error text for a failed releases request
   std::string describeError(geode::utils::web::WebResponse const &response);

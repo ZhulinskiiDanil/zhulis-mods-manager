@@ -14,6 +14,11 @@
       "id": "zhulis.mods-manager",
       "name": "Zhulis Mods Manager",
       "repo": "ZhulinskiiDanil/zhulis-mods-manager"
+    },
+    {
+      "id": "zhulis.icon-mayhem",
+      "name": "Icon Mayhem",
+      "repo": "ZhulinskiiDanil/icon-mayhem"
     }
   ]
 }

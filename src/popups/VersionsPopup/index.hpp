@@ -6,13 +6,22 @@
 
 using namespace geode::prelude;
 
-// Every GitHub release of a mod, to install a specific one or roll back
+// The nightly build and every GitHub release of a mod, to install a specific one or roll back
 class VersionsPopup : public geode::Popup
 {
 private:
   std::string m_modID;
+  ScrollLayer *m_list = nullptr;
+  std::optional<size_t> m_subscription;
+
+  ~VersionsPopup();
 
   bool init(std::string modID);
+
+  void rebuildList();
+  void onRebuild(float);
+  CCNode *createRowBase(std::string const &id, float width, float height);
+  CCNode *createNightlyRow(manager::ModState const &state, float width);
   CCNode *createRow(manager::ModState const &state, github::Release const &release, float width);
 
 public:

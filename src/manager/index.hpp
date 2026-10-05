@@ -38,13 +38,32 @@ namespace manager
 
     int pending = 0; // requests still running for this mod
 
+    // ! --- Nightly --- !
+    std::optional<github::Nightly> nightly; // looked up on demand
+    bool nightlyChecked = false;
+    bool nightlyLoading = false;
+    std::string nightlyError;
+    std::optional<std::string> installedNightly; // commit of the installed nightly build
+    bool nightlyUpdate = false;                  // the update is a newer nightly, not a release
+    bool installingNightly = false;              // the last install was a nightly, for Retry
+
     github::Release const *latest() const { return releases.empty() ? nullptr : &releases.front(); }
+
+    // What "Update" installs: a release tag or a nightly label
+    std::string updateName() const
+    {
+      if (nightlyUpdate && nightly)
+        return nightly->label();
+
+      return latest() ? latest()->tag : "";
+    }
   };
 
   class Manager
   {
   private:
     using Task = async::TaskHolder<web::WebResponse>;
+    using NightlyTask = async::TaskHolder<Result<std::optional<github::Nightly>>>;
 
     std::vector<ModState> m_mods;
     bool m_loading = false;
@@ -55,6 +74,7 @@ namespace manager
     std::map<std::string, Task> m_releaseTasks;
     std::map<std::string, Task> m_indexTasks;
     std::map<std::string, Task> m_downloadTasks;
+    std::map<std::string, NightlyTask> m_nightlyTasks;
     std::set<std::string> m_restartPrompted;
 
     size_t m_nextSubscriber = 0;
@@ -70,7 +90,17 @@ namespace manager
     void onRelease(std::string const &id, web::WebResponse const &response);
     void onIndex(std::string const &id, web::WebResponse const &response);
     void finishRequest(std::string const &id);
+    // `counted` when it's part of a refresh and the mod status waits for it
+    void loadNightly(std::string const &id, bool counted);
+    void onNightly(std::string const &id, Result<std::optional<github::Nightly>> result, bool counted);
+
+    void startDownload(ModState &state, bool nightly);
+    Function<void(web::WebProgress const &)> progressCallback(std::string const &id);
     void onDownload(std::string const &id, github::Release const &release, web::WebResponse const &response);
+    void onNightlyDownload(std::string const &id, github::Nightly const &nightly, web::WebResponse const &response);
+    // Checks the downloaded package at `temp` and puts it into the mods folder
+    void installPackage(ModState &state, std::filesystem::path const &temp,
+                        std::string label, std::optional<std::string> nightlySha);
     void failInstall(ModState &state, std::string error);
     void promptRestart();
 
@@ -83,8 +113,11 @@ namespace manager
 
     // `force` skips the releases cache, for a manual refresh
     void refresh(bool force = false);
-    // Installs the given tag, or the latest release
+    // Installs the given tag, or what "Update" offers
     void install(std::string const &id, std::optional<std::string> tag = std::nullopt);
+    void installNightly(std::string const &id);
+    // Looks up the latest nightly build, cached like releases
+    void fetchNightly(std::string const &id);
     void installAll();
 
     std::vector<ModState> const &mods() const { return m_mods; }

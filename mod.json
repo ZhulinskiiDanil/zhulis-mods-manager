@@ -8,7 +8,7 @@
 	},
 	"id": "zhulis.mods-manager",
 	"name": "Zhulis Mods Manager",
-	"version": "v1.1.1",
+	"version": "v1.2.0",
 	"developer": "Zhulis",
 	"description": "Install and update Zhulis mods straight from GitHub releases",
 	"tags": [

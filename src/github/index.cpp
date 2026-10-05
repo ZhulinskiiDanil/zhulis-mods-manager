@@ -20,12 +20,18 @@ arc::Future<web::WebResponse> github::send(web::WebRequest request, std::string 
   co_return co_await request.get(std::move(url));
 }
 
-arc::Future<web::WebResponse> github::fetchReleases(std::string const &repo, std::string const &etag)
+static web::WebRequest apiRequest()
 {
   web::WebRequest request;
   request.userAgent(USER_AGENT);
   request.header("Accept", "application/vnd.github+json");
   request.timeout(std::chrono::seconds(15));
+  return request;
+}
+
+arc::Future<web::WebResponse> github::fetchReleases(std::string const &repo, std::string const &etag)
+{
+  auto request = apiRequest();
 
   if (!etag.empty())
     request.header("If-None-Match", etag);
@@ -117,6 +123,171 @@ Result<std::vector<github::Release>> github::parseReleases(
                            { return b.version < a.version; });
 
   return Ok(std::move(releases));
+}
+
+// ! --- Nightly --- !
+
+static std::string urlEncode(std::string_view text)
+{
+  std::string out;
+
+  for (unsigned char c : text)
+  {
+    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~')
+      out += static_cast<char>(c);
+    else
+      out += fmt::format("%{:02X}", c);
+  }
+
+  return out;
+}
+
+static Result<matjson::Value> parseResponse(web::WebResponse const &response)
+{
+  if (!response.ok())
+    return Err(github::describeError(response));
+
+  auto json = response.json();
+
+  if (json.isErr() || !json.unwrap().isObject())
+    return Err("Invalid GitHub response");
+
+  return Ok(json.unwrap());
+}
+
+struct NightlyCandidate
+{
+  int64_t runId;
+  std::string sha;
+  std::string sha256;
+};
+
+// Artifacts of the default branch, newest first
+static Result<std::vector<NightlyCandidate>> parseArtifacts(matjson::Value const &json, std::string const &branch)
+{
+  auto artifacts = json["artifacts"].asArray();
+
+  if (artifacts.isErr())
+    return Err("Invalid GitHub response");
+
+  std::vector<NightlyCandidate> candidates;
+
+  for (auto const &artifact : artifacts.unwrap())
+  {
+    auto const &run = artifact["workflow_run"];
+    auto runId = run["id"].as<int64_t>();
+    auto sha = run["head_sha"].asString();
+    auto digest = artifact["digest"].asString().unwrapOr("");
+
+    // No digest, no way to check what nightly.link serves
+    if (runId.isErr() || sha.isErr() || artifact["expired"].asBool().unwrapOr(true) || !digest.starts_with("sha256:"))
+      continue;
+
+    // A fork's branch can have the same name, only builds of the repo itself
+    if (run["head_branch"].asString().unwrapOr("") != branch ||
+        run["head_repository_id"].as<int64_t>().unwrapOr(-1) != run["repository_id"].as<int64_t>().unwrapOr(-2))
+      continue;
+
+    candidates.push_back({runId.unwrap(), sha.unwrap(), utils::string::toLower(digest.substr(7))});
+  }
+
+  // Newest first already, but don't rely on it
+  std::ranges::stable_sort(candidates, [](auto const &a, auto const &b)
+                           { return a.runId > b.runId; });
+
+  return Ok(std::move(candidates));
+}
+
+arc::Future<Result<std::optional<github::Nightly>>> github::fetchNightly(std::string repo)
+{
+  // Runs may also fail after the artifact is uploaded, a few are checked
+  static constexpr size_t MAX_RUNS = 3;
+
+  auto base = fmt::format("https://api.github.com/repos/{}", repo);
+
+  auto repoInfo = parseResponse(co_await send(apiRequest(), base));
+
+  if (repoInfo.isErr())
+    co_return Err(repoInfo.unwrapErr());
+
+  auto branch = repoInfo.unwrap()["default_branch"].asString();
+
+  if (branch.isErr())
+    co_return Err("Invalid GitHub response");
+
+  // The filtered runs list comes from a search index that can be stale, the artifacts list isn't
+  auto artifacts = parseResponse(co_await send(
+      apiRequest(),
+      fmt::format("{}/actions/artifacts?name={}&per_page=30", base, urlEncode(NIGHTLY_ARTIFACT))));
+
+  if (artifacts.isErr())
+    co_return Err(artifacts.unwrapErr());
+
+  auto candidates = parseArtifacts(artifacts.unwrap(), branch.unwrap());
+
+  if (candidates.isErr())
+    co_return Err(candidates.unwrapErr());
+
+  // One run per commit is enough, the newest one
+  std::set<std::string> seen;
+  size_t checked = 0;
+
+  for (auto const &candidate : candidates.unwrap())
+  {
+    if (!seen.insert(candidate.sha).second)
+      continue;
+
+    if (checked++ == MAX_RUNS)
+      break;
+
+    auto run = parseResponse(co_await send(apiRequest(), fmt::format("{}/actions/runs/{}", base, candidate.runId)));
+
+    if (run.isErr())
+      co_return Err(run.unwrapErr());
+
+    auto const &json = run.unwrap();
+
+    if (json["status"].asString().unwrapOr("") != "completed" ||
+        json["conclusion"].asString().unwrapOr("") != "success" ||
+        json["head_sha"].asString().unwrapOr("") != candidate.sha)
+      continue;
+
+    auto message = json["head_commit"]["message"].asString().unwrapOr("");
+
+    co_return Ok(Nightly{
+        candidate.sha,
+        message.substr(0, message.find('\n')),
+        fmt::format("https://nightly.link/{}/actions/runs/{}/{}.zip", repo, candidate.runId, urlEncode(NIGHTLY_ARTIFACT)),
+        candidate.sha256,
+    });
+  }
+
+  co_return Ok(std::nullopt);
+}
+
+matjson::Value github::nightlyToJson(std::optional<Nightly> const &nightly)
+{
+  if (!nightly)
+    return nullptr;
+
+  return matjson::makeObject({
+      {"sha", nightly->sha},
+      {"message", nightly->message},
+      {"assetUrl", nightly->assetUrl},
+      {"sha256", nightly->sha256},
+  });
+}
+
+std::optional<github::Nightly> github::nightlyFromJson(matjson::Value const &json)
+{
+  auto sha = json["sha"].asString();
+  auto assetUrl = json["assetUrl"].asString();
+  auto sha256 = json["sha256"].asString();
+
+  if (sha.isErr() || assetUrl.isErr() || sha256.isErr())
+    return std::nullopt;
+
+  return Nightly{sha.unwrap(), json["message"].asString().unwrapOr(""), assetUrl.unwrap(), sha256.unwrap()};
 }
 
 std::string github::describeError(web::WebResponse const &response)
