@@ -310,6 +310,14 @@ CCNode *VersionsPopup::createRepoRow(ModState const &state, float width)
   auto btn = CCMenuItemExt::createSpriteExtra(spr, [repo = state.entry.repo](auto)
                                               { web::openLinkInBrowser(fmt::format("https://github.com/{}", repo)); });
   btn->setID("repo-button");
+
+  // Where to report a bug of the mod
+  auto issuesSpr = ButtonSprite::create("Issues", "goldFont.fnt", "GJ_button_04.png", .8f);
+  issuesSpr->setScale(.5f);
+  auto issues = CCMenuItemExt::createSpriteExtra(issuesSpr, [repo = state.entry.repo](auto)
+                                                 { web::openLinkInBrowser(fmt::format("https://github.com/{}/issues", repo)); });
+  issues->setID("issues-button");
+  menu->addChild(issues);
   menu->addChild(btn);
   menu->updateLayout();
 

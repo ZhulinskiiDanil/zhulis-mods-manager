@@ -2,6 +2,7 @@
 
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/ui/LazySprite.hpp>
+#include <Geode/ui/ProgressBar.hpp>
 
 #include "../VersionsPopup/index.hpp"
 
@@ -155,7 +156,10 @@ void ManagerPopup::rebuildList()
     content->setPositionY(std::clamp(fromTop - content->getContentHeight(), minY, 0.f));
   }
 
-  m_updateAllBtn->setVisible(manager.updatesCount() > 0);
+  auto updates = manager.updatesCount();
+  m_updateAllBtn->setVisible(updates > 0);
+  if (auto sprite = typeinfo_cast<ButtonSprite *>(m_updateAllBtn->getNormalImage()); sprite && updates > 0)
+    sprite->setString(fmt::format("Update all ({})", updates).c_str());
 }
 
 void ManagerPopup::onRebuild(float)
@@ -176,6 +180,8 @@ void ManagerPopup::onTick(float)
 
     if (label)
       label->setString(fmt::format("Downloading {}%", static_cast<int>(state.progress * 100.f)).c_str());
+    if (auto bar = row ? typeinfo_cast<ProgressBar *>(row->getChildByID("progress-bar")) : nullptr)
+      bar->updateProgress(state.progress * 100.f);
   }
 }
 
@@ -308,6 +314,21 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
     statusLabel->setColor({255, 200, 90});
 
   row->addChildAtPosition(statusLabel, Anchor::Left, {TEXT_X + versionLabel->getScaledContentWidth() + 8.f, -13.f}, {0.f, .5f});
+
+  // ! --- Download progress --- !
+  // Right after "Downloading 42%", the buttons stay where they are
+  if (state.status == Status::Downloading)
+  {
+    static constexpr float BAR_WIDTH = 80.f;
+    auto bar = ProgressBar::create(ProgressBarStyle::Slider);
+    bar->setID("progress-bar");
+    bar->showProgressLabel(false);
+    bar->updateProgress(state.progress * 100.f);
+    if (auto barWidth = bar->getContentWidth(); barWidth > 0)
+      bar->setScale(BAR_WIDTH / barWidth);
+    float x = TEXT_X + versionLabel->getScaledContentWidth() + 8.f + statusLabel->getScaledContentWidth() + 10.f;
+    row->addChildAtPosition(bar, Anchor::Left, {x, -13.f}, {0.f, .5f});
+  }
 
   // ! --- Actions --- !
   auto menu = CCMenu::create();
