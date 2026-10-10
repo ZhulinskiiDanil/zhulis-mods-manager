@@ -3,6 +3,7 @@
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/ui/LazySprite.hpp>
 #include <Geode/ui/ProgressBar.hpp>
+#include <Geode/ui/Scrollbar.hpp>
 
 #include "../VersionsPopup/index.hpp"
 
@@ -71,6 +72,10 @@ bool ManagerPopup::init()
   m_list->ignoreAnchorPointForPosition(false);
   m_list->m_contentLayer->setLayout(ScrollLayer::createDefaultListLayout(4.f));
   m_mainLayer->addChildAtPosition(m_list, Anchor::Center, {0.f, -8.f});
+
+  // In the padding right of the list: shows there are more mods below
+  auto scrollbar = Scrollbar::create(m_list);
+  m_mainLayer->addChildAtPosition(scrollbar, Anchor::Center, {listSize.width / 2.f + PADDING / 2.f, -8.f});
 
   m_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
   m_statusLabel->setScale(.4f);

@@ -1,3 +1,7 @@
+# v1.3.5
+
+ * The mods list and the versions list have a scrollbar, so it shows there are more below
+
 # v1.3.4
 
  * Release notes in the game leave out their Install section: it tells how to download the release from GitHub, which the manager just did

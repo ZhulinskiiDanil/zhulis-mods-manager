@@ -1,6 +1,7 @@
 #include "index.hpp"
 
 #include <Geode/ui/MDPopup.hpp>
+#include <Geode/ui/Scrollbar.hpp>
 
 using namespace manager;
 
@@ -53,6 +54,10 @@ bool VersionsPopup::init(std::string modID)
   m_list->ignoreAnchorPointForPosition(false);
   m_list->m_contentLayer->setLayout(ScrollLayer::createDefaultListLayout(3.f));
   m_mainLayer->addChildAtPosition(m_list, Anchor::Center, {0.f, -10.f});
+
+  // In the padding right of the list: shows there are more versions below
+  auto scrollbar = Scrollbar::create(m_list);
+  m_mainLayer->addChildAtPosition(scrollbar, Anchor::Center, {listSize.width / 2.f + PADDING / 2.f, -10.f});
 
   // Deferred: a click handler may trigger a rebuild that removes its own button
   m_subscription = Manager::get().subscribe([this]
