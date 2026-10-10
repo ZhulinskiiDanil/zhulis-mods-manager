@@ -1,5 +1,6 @@
 # v1.3.2
 
+ * Checks for new releases every 30 minutes while playing (a setting), with a notification for the ones that came out since
  * A build newer than the latest release (a local one) says so, instead of when that release came out
  * The versions list shows the installed version when it isn't one of the releases
 

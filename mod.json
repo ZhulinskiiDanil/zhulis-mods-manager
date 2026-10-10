@@ -30,6 +30,12 @@
 			"description": "Fetch the latest GitHub releases of Zhulis mods when the game starts.",
 			"default": true
 		},
+		"periodic-check": {
+			"type": "bool",
+			"name": "Check while playing",
+			"description": "Look for new releases every 30 minutes and show a notification for the ones that came out since.",
+			"default": true
+		},
 		"include-prereleases": {
 			"type": "bool",
 			"name": "Include pre-releases",
