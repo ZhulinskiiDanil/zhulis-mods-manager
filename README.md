@@ -4,6 +4,8 @@ A [Geode](https://geode-sdk.org) mod that installs and updates **Zhulis** mods s
 
 <img src="logo.png" width="128" alt="logo">
 
+![The list of Zhulis mods](docs/manager.png)
+
 ## Features
 
 - A **GitHub** button on the Geode mods page (left side) opens the list of Zhulis mods with their installed and latest versions, Install / Update buttons and release changelogs. A badge shows up on it when updates are available
