@@ -1,5 +1,7 @@
 #include "index.hpp"
 
+#include <Geode/ui/MDPopup.hpp>
+
 using namespace manager;
 
 static constexpr float POPUP_WIDTH = 300.f;
@@ -243,6 +245,17 @@ CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &r
   }
 
   auto menu = createActionMenu(row, width, ROW_HEIGHT);
+
+  // What changed in this release, before installing it
+  if (!release.body.empty())
+  {
+    auto info = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
+    info->setScale(.55f);
+    auto notes = CCMenuItemExt::createSpriteExtra(info, [tag = release.tag, body = release.body](auto)
+                                                  { MDPopup::create(tag, body, "OK")->show(); });
+    notes->setID("notes-button");
+    menu->addChild(notes);
+  }
 
   // A nightly build has the version of a release but isn't it
   bool installed = state.installed && *state.installed == release.version && !state.installedNightly;

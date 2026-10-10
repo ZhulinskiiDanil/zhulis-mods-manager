@@ -1,3 +1,7 @@
+# v1.3.3
+
+ * The versions list has an info button on every release with its notes, to see what changed before installing or rolling back
+
 # v1.3.2
 
  * A progress bar next to Downloading, the Update all button counts the updates, an Issues button in the versions list
