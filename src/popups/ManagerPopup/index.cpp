@@ -285,6 +285,9 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
     status = "Needs dependencies";
   else if (state.status == Status::Changed)
     status = fmt::format("{}, restart to apply", state.change);
+  // A local build or a nightly ahead of every release: saying when the release came out would mislead
+  else if (auto latest = state.latest(); latest && state.installed && latest->version < *state.installed)
+    status = fmt::format("Newer than {}", latest->tag);
   // When the shown release came out
   else if (auto latest = state.latest(); latest && state.status != Status::Loading)
   {

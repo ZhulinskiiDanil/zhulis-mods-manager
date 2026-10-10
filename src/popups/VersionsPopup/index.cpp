@@ -79,6 +79,12 @@ void VersionsPopup::rebuildList()
   content->removeAllChildren();
   content->addChild(createNightlyRow(*state, width));
 
+  // The installed version isn't one of the releases (a local build): it still shows, as installed
+  bool listed = !state->installed || std::ranges::any_of(state->releases, [&](auto const &release)
+                                                         { return release.version == *state->installed; });
+  if (!listed && !state->installedNightly)
+    content->addChild(createInstalledRow(*state, width));
+
   for (auto const &release : state->releases)
     content->addChild(createRow(*state, release, width));
 
@@ -259,6 +265,28 @@ CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &r
     menu->addChild(btn);
   }
 
+  menu->updateLayout();
+
+  return row;
+}
+
+// ! --- A build that isn't a release --- !
+
+CCNode *VersionsPopup::createInstalledRow(ModState const &state, float width)
+{
+  auto row = createRowBase("installed", width, ROW_HEIGHT);
+
+  auto tag = CCLabelBMFont::create(state.installed->toVString().c_str(), "goldFont.fnt");
+  tag->setScale(.55f);
+  row->addChildAtPosition(tag, Anchor::Left, {8.f, 0.f}, {0.f, .5f});
+
+  auto hint = CCLabelBMFont::create("not a release, built some other way", "chatFont.fnt");
+  hint->setScale(.5f);
+  hint->setOpacity(150);
+  row->addChildAtPosition(hint, Anchor::Left, {tag->getScaledContentWidth() + 14.f, 0.f}, {0.f, .5f});
+
+  auto menu = createActionMenu(row, width, ROW_HEIGHT);
+  menu->addChild(createInstalledLabel());
   menu->updateLayout();
 
   return row;

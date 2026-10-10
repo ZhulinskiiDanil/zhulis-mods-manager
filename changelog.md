@@ -1,3 +1,8 @@
+# v1.3.2
+
+ * A build newer than the latest release (a local one) says so, instead of when that release came out
+ * The versions list shows the installed version when it isn't one of the releases
+
 # v1.3.1
 
  * After the restart that loads an update, a What's new popup shows the notes of what was installed
