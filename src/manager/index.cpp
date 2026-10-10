@@ -16,7 +16,7 @@ Manager &Manager::get()
 
 static bool isBusy(Status status)
 {
-  return status == Status::Downloading || status == Status::Downloaded;
+  return status == Status::Downloading || status == Status::Downloaded || status == Status::Changed;
 }
 
 // ! --- Installed nightlies --- !
@@ -354,10 +354,19 @@ void Manager::updateStatus(ModState &state)
   if (isBusy(state.status))
     return;
 
-  if (auto mod = Loader::get()->getInstalledMod(state.entry.id))
+  auto mod = Loader::get()->getInstalledMod(state.entry.id);
+
+  if (mod && !mod->isUninstalled())
     state.installed = mod->getVersion();
   else
     state.installed.reset();
+
+  // Turned off in Geode: updates wait until it's on again
+  if (state.installed && !mod->isOrWillBeEnabled())
+  {
+    state.status = Status::Disabled;
+    return;
+  }
 
   state.installedNightly = installedNightly(state.entry.id);
   state.nightlyUpdate = false;
@@ -723,6 +732,51 @@ ModState const *Manager::find(std::string_view id) const
   return const_cast<Manager *>(this)->findMut(id);
 }
 
+// ! --- Enable, uninstall --- !
+
+void Manager::enable(std::string const &id)
+{
+  auto state = findMut(id);
+  auto mod = Loader::get()->getInstalledMod(id);
+
+  if (!state || !mod)
+    return;
+
+  if (auto result = mod->enable(); !result)
+  {
+    Notification::create(fmt::format("Can't enable {}: {}", state->entry.name, result.unwrapErr()), NotificationIcon::Error)->show();
+    return;
+  }
+
+  state->status = Status::Changed;
+  state->change = "Enabled";
+  notify();
+}
+
+void Manager::uninstall(std::string const &id)
+{
+  auto state = findMut(id);
+  auto mod = Loader::get()->getInstalledMod(id);
+
+  // The manager can't take itself away from here
+  if (!state || !mod || mod == Mod::get())
+    return;
+
+  if (auto result = mod->uninstall(false); !result)
+  {
+    Notification::create(fmt::format("Can't uninstall {}: {}", state->entry.name, result.unwrapErr()), NotificationIcon::Error)->show();
+    return;
+  }
+
+  // A nightly that is gone can't be the installed one anymore
+  Mod::get()->getSaveContainer().erase(nightlyKey(id, "sha"));
+  Mod::get()->getSaveContainer().erase(nightlyKey(id, "version"));
+
+  state->status = Status::Changed;
+  state->change = "Uninstalled";
+  notify();
+}
+
 size_t Manager::updatesCount() const
 {
   return std::ranges::count_if(m_mods, [](auto const &mod)
@@ -769,7 +823,10 @@ char const *manager::statusText(Status status)
   case Status::Downloading:
     return "Downloading...";
   case Status::Downloaded:
+  case Status::Changed:
     return "Restart to apply";
+  case Status::Disabled:
+    return "Disabled";
   case Status::Error:
     return "Error";
   }

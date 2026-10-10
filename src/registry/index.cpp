@@ -7,9 +7,11 @@ using namespace geode::prelude;
 std::vector<registry::ModEntry> registry::fallback()
 {
   return {
-      {"zhulis.blitzkrieg", "Blitzkrieg", "ZhulinskiiDanil/blitzkrieg"},
-      {"zhulis.askdash", "AskDash", "ZhulinskiiDanil/gd-ai"},
-      {"zhulis.mods-manager", "Zhulis Mods Manager", "ZhulinskiiDanil/zhulis-mods-manager"},
+      {"zhulis.blitzkrieg", "Blitzkrieg", "ZhulinskiiDanil/blitzkrieg", "Automatic practice progression tracker for GD"},
+      {"zhulis.askdash", "AskDash", "ZhulinskiiDanil/gd-ai", "AI assistant: ask anything about GD in-game"},
+      {"zhulis.mods-manager", "Zhulis Mods Manager", "ZhulinskiiDanil/zhulis-mods-manager", "Install and update Zhulis mods straight from GitHub releases"},
+      {"zhulis.icon-mayhem", "Icon Mayhem", "ZhulinskiiDanil/icon-mayhem", "Cute and crazy icon customizations: physics-based hair, accessories, wings, a pet and effects"},
+      {"zhulis.improved-logger", "Improved Logger", "ZhulinskiiDanil/improved-geode-logger", "An interactive console for the logs: groups by mod, folds repeats, search, level and mod filters"},
   };
 }
 
@@ -58,7 +60,8 @@ Result<std::vector<registry::ModEntry>> registry::parse(web::WebResponse const &
     }
 
     auto name = item["name"].asString().unwrapOr(id.unwrap());
-    mods.push_back({id.unwrap(), std::move(name), repo.unwrap()});
+    auto description = item["description"].asString().unwrapOr("");
+    mods.push_back({id.unwrap(), std::move(name), repo.unwrap(), std::move(description)});
   }
 
   if (mods.empty())

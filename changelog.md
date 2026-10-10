@@ -1,3 +1,11 @@
+# v1.3.0
+
+ * Every mod in the list shows its logo and a short description
+ * When the latest release came out ("2 days ago"), also in the versions list
+ * A mod turned off in Geode shows as Disabled with an Enable button, instead of an update that can't load
+ * Uninstall from the versions list (settings and saves stay), with a Restart button afterwards
+ * Debug builds of the manager are built as RelWithDebInfo, a Debug build crashed with Geode on Windows
+
 # v1.2.0
 
  * Nightly builds: the versions list offers the build of the latest commit that passed CI, from its "Build Output" artifact

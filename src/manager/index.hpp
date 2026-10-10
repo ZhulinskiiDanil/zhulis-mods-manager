@@ -20,6 +20,8 @@ namespace manager
     NoRelease,
     Downloading,
     Downloaded, // waits for a restart
+    Disabled,   // installed but turned off in Geode
+    Changed,    // enabled or uninstalled here, waits for a restart
     Error,
   };
 
@@ -34,6 +36,7 @@ namespace manager
 
     float progress = 0.f;      // 0..1 while downloading
     std::string downloadedTag; // set once downloaded
+    std::string change;        // "Enabled" or "Uninstalled" once Changed
     std::vector<std::string> missingDeps;
 
     int pending = 0; // requests still running for this mod
@@ -119,6 +122,10 @@ namespace manager
     // Looks up the latest nightly build, cached like releases
     void fetchNightly(std::string const &id);
     void installAll();
+    // Turns a disabled mod back on, it loads after a restart
+    void enable(std::string const &id);
+    // Deletes the mod's .geode, its settings and saves stay
+    void uninstall(std::string const &id);
 
     std::vector<ModState> const &mods() const { return m_mods; }
     ModState const *find(std::string_view id) const;

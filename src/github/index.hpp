@@ -17,7 +17,11 @@ namespace github
     std::string sha256; // empty if GitHub didn't provide a digest
     std::string body;
     bool prerelease = false;
+    std::string published; // "2026-10-10T13:54:42Z"
   };
+
+  // "today", "yesterday", "3 days ago", "2 months ago" for a GitHub timestamp, empty if it can't be read
+  std::string ago(std::string_view timestamp);
 
   // Nightly builds are this workflow artifact of the default branch
   constexpr std::string_view NIGHTLY_ARTIFACT = "Build Output";

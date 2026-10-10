@@ -82,6 +82,11 @@ void VersionsPopup::rebuildList()
   for (auto const &release : state->releases)
     content->addChild(createRow(*state, release, width));
 
+  // Not the manager itself, it would take away the way back
+  auto installed = Loader::get()->getInstalledMod(m_modID);
+  if (installed && !installed->isUninstalled() && installed != Mod::get() && state->status != Status::Changed)
+    content->addChild(createUninstallRow(*state, width));
+
   content->updateLayout();
 
   float minY = m_list->getContentHeight() - content->getContentHeight();
@@ -201,12 +206,23 @@ CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &r
   tag->setScale(.55f);
   row->addChildAtPosition(tag, Anchor::Left, {8.f, 0.f}, {0.f, .5f});
 
+  float after = tag->getScaledContentWidth() + 14.f;
+
   if (release.prerelease)
   {
     auto pre = CCLabelBMFont::create("pre-release", "chatFont.fnt");
     pre->setScale(.55f);
     pre->setColor({255, 200, 90});
-    row->addChildAtPosition(pre, Anchor::Left, {tag->getScaledContentWidth() + 14.f, 0.f}, {0.f, .5f});
+    row->addChildAtPosition(pre, Anchor::Left, {after, 0.f}, {0.f, .5f});
+    after += pre->getScaledContentWidth() + 6.f;
+  }
+
+  if (auto when = github::ago(release.published); !when.empty())
+  {
+    auto date = CCLabelBMFont::create(when.c_str(), "chatFont.fnt");
+    date->setScale(.5f);
+    date->setOpacity(150);
+    row->addChildAtPosition(date, Anchor::Left, {after, 0.f}, {0.f, .5f});
   }
 
   auto menu = createActionMenu(row, width, ROW_HEIGHT);
@@ -232,6 +248,41 @@ CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &r
     menu->addChild(btn);
   }
 
+  menu->updateLayout();
+
+  return row;
+}
+
+// ! --- Uninstall --- !
+
+CCNode *VersionsPopup::createUninstallRow(ModState const &state, float width)
+{
+  auto row = createRowBase("uninstall", width, ROW_HEIGHT);
+
+  auto hint = CCLabelBMFont::create("Settings and saves stay", "chatFont.fnt");
+  hint->setScale(.55f);
+  hint->setOpacity(150);
+  row->addChildAtPosition(hint, Anchor::Left, {8.f, 0.f}, {0.f, .5f});
+
+  auto menu = createActionMenu(row, width, ROW_HEIGHT);
+  auto spr = ButtonSprite::create("Uninstall", "goldFont.fnt", "GJ_button_06.png", .8f);
+  spr->setScale(.5f);
+
+  auto btn = CCMenuItemExt::createSpriteExtra(spr, [this, name = state.entry.name](auto)
+                                              {
+    createQuickPopup(
+        "Uninstall",
+        fmt::format("Uninstall <cy>{}</c>? Its settings and saves stay, so installing it again brings them back.", name),
+        "Cancel", "Uninstall",
+        [this](auto, bool confirmed)
+        {
+          if (!confirmed)
+            return;
+          Manager::get().uninstall(m_modID);
+          onClose(nullptr);
+        }); });
+  btn->setID("uninstall-button");
+  menu->addChild(btn);
   menu->updateLayout();
 
   return row;

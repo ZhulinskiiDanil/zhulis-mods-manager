@@ -11,6 +11,8 @@ A [Geode](https://geode-sdk.org) mod that installs and updates **Zhulis** mods s
 - **Update all**, download progress and a single restart prompt per batch
 - Changelog of every release newer than the installed one, and a versions list to install any release or roll back
 - **Nightly builds**: the versions list also offers the build of the latest commit on the default branch whose CI run passed and uploaded the **Build Output** artifact. Once a nightly is installed, newer nightlies show up as updates until a newer release comes out
+- Every mod shows its logo, a short description and when its latest release came out
+- Mods turned off in Geode show as **Disabled** with an **Enable** button, and any installed mod can be uninstalled from its versions list (settings and saves stay)
 - Checks for updates on startup and shows a notification
 - Updates itself: the manager is always tracked and asks to update when a new version is out
 - Never downgrades on its own: if the installed version is newer than the GitHub release, it's left alone. Mods that are on the Geode Index with the same or a newer version are left to Geode
@@ -36,14 +38,19 @@ The list lives in [`mods.json`](mods.json) and is fetched at runtime, so adding 
 ```json
 {
   "mods": [
-    { "id": "zhulis.blitzkrieg", "name": "Blitzkrieg", "repo": "ZhulinskiiDanil/blitzkrieg" }
+    {
+      "id": "zhulis.blitzkrieg",
+      "name": "Blitzkrieg",
+      "repo": "ZhulinskiiDanil/blitzkrieg",
+      "description": "Automatic practice progression tracker for GD"
+    }
   ]
 }
 ```
 
 To add a mod:
 
-1. Add an entry with the mod `id`, display `name` and GitHub `repo` (`ZhulinskiiDanil/<name>`, must be public)
+1. Add an entry with the mod `id`, display `name`, GitHub `repo` (`ZhulinskiiDanil/<name>`, must be public) and a short `description`. The list shows the repo's `logo.png` until the mod is installed
 2. Publish releases in that repo with a tag the mod version can be parsed from (`v1.2.3`) and the asset named `<mod-id>.geode`
 3. For nightly builds, run a workflow on pushes to the default branch that uploads a **Build Output** artifact with `<mod-id>.geode` inside (like this repo's [workflow](.github/workflows/multi-platform.yml)). Installing the [nightly.link GitHub App](https://github.com/apps/nightly-link) on the repo keeps its downloads off nightly.link's shared rate limit
 

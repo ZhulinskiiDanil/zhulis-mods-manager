@@ -1,6 +1,7 @@
 #include "index.hpp"
 
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/ui/LazySprite.hpp>
 
 #include "../VersionsPopup/index.hpp"
 
@@ -9,7 +10,10 @@ using namespace manager;
 static constexpr float POPUP_WIDTH = 400.f;
 static constexpr float POPUP_HEIGHT = 260.f;
 static constexpr float PADDING = 12.f;
-static constexpr float ROW_HEIGHT = 42.f;
+static constexpr float ROW_HEIGHT = 50.f;
+static constexpr float LOGO_SIZE = 32.f;
+// Text starts right of the logo
+static constexpr float TEXT_X = LOGO_SIZE + 14.f;
 
 ManagerPopup *ManagerPopup::create()
 {
@@ -151,6 +155,19 @@ void ManagerPopup::onTick(float)
   }
 }
 
+// Shrinks the label down to a readable size, then cuts the end off with "..."
+static void fitLabel(CCLabelBMFont *label, std::string text, float maxWidth, float scale, float minScale)
+{
+  label->limitLabelWidth(maxWidth, scale, minScale);
+  while (label->getScaledContentWidth() > maxWidth && text.size() > 4)
+  {
+    // Whole words go first, so the cut lands between them
+    auto space = text.find_last_of(' ', text.size() - 2);
+    text.resize(space != std::string::npos && space > text.size() / 2 ? space : text.size() - 2);
+    label->setString((text + "...").c_str());
+  }
+}
+
 static CCMenuItemSpriteExtra *createIconButton(char const *frame, std::function<void()> callback)
 {
   auto spr = CircleButtonSprite::createWithSpriteFrameName(
@@ -175,10 +192,47 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
   bg->setContentSize(row->getContentSize() / bg->getScale());
   row->addChildAtPosition(bg, Anchor::Center);
 
+  // ! --- Logo --- !
+  // The installed mod's own logo, or the repo's logo.png before it's installed
+  CCNode *logo = nullptr;
+  auto installedMod = Loader::get()->getInstalledMod(state.entry.id);
+
+  if (installedMod && !installedMod->isUninstalled())
+    logo = geode::createModLogo(installedMod);
+  else
+  {
+    auto lazy = LazySprite::create({LOGO_SIZE, LOGO_SIZE});
+    lazy->setAutoResize(true);
+    lazy->setLoadCallback([lazy](Result<> result)
+                          {
+      // No logo in the repo: the row reads fine without one
+      if (!result)
+        lazy->setVisible(false); });
+    lazy->loadFromUrl(state.entry.logoUrl());
+    logo = lazy;
+  }
+
+  if (auto size = logo->getContentSize(); size.width > 0 && size.height > 0)
+    logo->setScale(LOGO_SIZE / std::max(size.width, size.height));
+  row->addChildAtPosition(logo, Anchor::Left, {8.f + LOGO_SIZE / 2.f, 0.f});
+
   // ! --- Info --- !
   auto name = CCLabelBMFont::create(state.entry.name.c_str(), "bigFont.fnt");
-  name->limitLabelWidth(width * .45f, .5f, .1f);
-  row->addChildAtPosition(name, Anchor::Left, {8.f, 7.f}, {0.f, .5f});
+  name->limitLabelWidth(width * .4f, .45f, .1f);
+  row->addChildAtPosition(name, Anchor::Left, {TEXT_X, 13.f}, {0.f, .5f});
+
+  // The registry's description, or the installed mod's own
+  auto description = state.entry.description;
+  if (description.empty() && installedMod)
+    description = installedMod->getDescription().value_or("");
+
+  if (!description.empty())
+  {
+    auto descriptionLabel = CCLabelBMFont::create(description.c_str(), "chatFont.fnt");
+    fitLabel(descriptionLabel, description, width * .55f, .5f, .42f);
+    descriptionLabel->setOpacity(150);
+    row->addChildAtPosition(descriptionLabel, Anchor::Left, {TEXT_X, 0.f}, {0.f, .5f});
+  }
 
   std::string versions = state.installed ? state.installed->toVString() : "-";
 
@@ -191,12 +245,13 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
     versions += " -> " + state.indexVersion->toVString();
   else if (state.status == Status::UpdateAvailable)
     versions += " -> " + state.updateName();
-  else if (state.latest() && state.status != Status::UpToDate)
+  // Only an arrow to something newer
+  else if (state.latest() && state.status != Status::UpToDate && (!state.installed || *state.installed < state.latest()->version))
     versions += " -> " + state.latest()->tag;
 
   auto versionLabel = CCLabelBMFont::create(versions.c_str(), "goldFont.fnt");
-  versionLabel->limitLabelWidth(width * .35f, .45f, .1f);
-  row->addChildAtPosition(versionLabel, Anchor::Left, {8.f, -9.f}, {0.f, .5f});
+  versionLabel->limitLabelWidth(width * .26f, .4f, .1f);
+  row->addChildAtPosition(versionLabel, Anchor::Left, {TEXT_X, -13.f}, {0.f, .5f});
 
   std::string status = statusText(state.status);
 
@@ -204,22 +259,32 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
     status = state.error;
   else if (state.status == Status::Downloaded && !state.missingDeps.empty())
     status = "Needs dependencies";
+  else if (state.status == Status::Changed)
+    status = fmt::format("{}, restart to apply", state.change);
+  // When the shown release came out
+  else if (auto latest = state.latest(); latest && state.status != Status::Loading)
+  {
+    if (auto when = github::ago(latest->published); !when.empty())
+      status += fmt::format(" - {}", when);
+  }
 
   auto statusLabel = CCLabelBMFont::create(status.c_str(), "chatFont.fnt");
   statusLabel->setID("status-label");
-  statusLabel->limitLabelWidth(width * .3f, .6f, .1f);
+  statusLabel->limitLabelWidth(width * .24f, .55f, .1f);
   statusLabel->setOpacity(180);
 
   if (state.status == Status::UpdateAvailable)
     statusLabel->setColor({120, 255, 120});
   else if (state.status == Status::Error || !state.missingDeps.empty())
     statusLabel->setColor({255, 110, 110});
+  else if (state.status == Status::Disabled)
+    statusLabel->setColor({255, 200, 90});
 
-  row->addChildAtPosition(statusLabel, Anchor::Left, {versionLabel->getScaledContentWidth() + 16.f, -9.f}, {0.f, .5f});
+  row->addChildAtPosition(statusLabel, Anchor::Left, {TEXT_X + versionLabel->getScaledContentWidth() + 8.f, -13.f}, {0.f, .5f});
 
   // ! --- Actions --- !
   auto menu = CCMenu::create();
-  menu->setContentSize({width * .5f, ROW_HEIGHT});
+  menu->setContentSize({width * .35f, ROW_HEIGHT});
   menu->setAnchorPoint({1.f, .5f});
   menu->setLayout(
       RowLayout::create()
@@ -284,6 +349,17 @@ CCNode *ManagerPopup::createRow(ModState const &state, float width)
       action = "Retry";
       buttonBG = "GJ_button_06.png";
     }
+    break;
+  case Status::Disabled:
+    action = "Enable";
+    onAction = [id]
+    { Manager::get().enable(id); };
+    break;
+  case Status::Changed:
+    action = "Restart";
+    buttonBG = "GJ_button_02.png";
+    onAction = []
+    { game::restart(true); };
     break;
   case Status::Downloaded:
     if (!state.missingDeps.empty())

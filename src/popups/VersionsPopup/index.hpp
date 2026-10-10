@@ -23,6 +23,8 @@ private:
   CCNode *createRowBase(std::string const &id, float width, float height);
   CCNode *createNightlyRow(manager::ModState const &state, float width);
   CCNode *createRow(manager::ModState const &state, github::Release const &release, float width);
+  // Last in the list, for an installed mod other than the manager
+  CCNode *createUninstallRow(manager::ModState const &state, float width);
 
 public:
   static VersionsPopup *create(std::string modID);

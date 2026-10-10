@@ -1,5 +1,7 @@
 #include "index.hpp"
 
+#include <charconv>
+
 using namespace geode::prelude;
 
 static constexpr auto USER_AGENT = "zhulis-mods-manager";
@@ -115,6 +117,7 @@ Result<std::vector<github::Release>> github::parseReleases(
         utils::string::toLower(asset->sha256),
         item["body"].asString().unwrapOr(""),
         prerelease,
+        item["published_at"].asString().unwrapOr(""),
     });
   }
 
@@ -123,6 +126,46 @@ Result<std::vector<github::Release>> github::parseReleases(
                            { return b.version < a.version; });
 
   return Ok(std::move(releases));
+}
+
+// Days since 1970-01-01 for a date in the proleptic Gregorian calendar
+static int64_t daysFromCivil(int64_t year, unsigned month, unsigned day)
+{
+  year -= month <= 2;
+  int64_t era = (year >= 0 ? year : year - 399) / 400;
+  auto yearOfEra = static_cast<unsigned>(year - era * 400);
+  unsigned dayOfYear = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+  unsigned dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear;
+  return era * 146097 + static_cast<int64_t>(dayOfEra) - 719468;
+}
+
+std::string github::ago(std::string_view timestamp)
+{
+  // "2026-10-10T..." is all that's needed
+  int year = 0, month = 0, day = 0;
+  auto number = [&](size_t from, size_t length, int &out)
+  {
+    auto start = timestamp.data() + from;
+    return std::from_chars(start, start + length, out).ec == std::errc();
+  };
+  if (timestamp.size() < 10 || timestamp[4] != '-' || timestamp[7] != '-' ||
+      !number(0, 4, year) || !number(5, 2, month) || !number(8, 2, day))
+    return "";
+
+  auto now = std::chrono::duration_cast<std::chrono::hours>(std::chrono::system_clock::now().time_since_epoch()).count() / 24;
+  auto days = now - daysFromCivil(year, month, day);
+
+  if (days <= 0)
+    return "today";
+  if (days == 1)
+    return "yesterday";
+  if (days < 14)
+    return fmt::format("{} days ago", days);
+  if (days < 60)
+    return fmt::format("{} weeks ago", days / 7);
+  if (days < 730)
+    return fmt::format("{} months ago", days / 30);
+  return fmt::format("{} years ago", days / 365);
 }
 
 // ! --- Nightly --- !

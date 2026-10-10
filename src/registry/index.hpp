@@ -11,6 +11,10 @@ namespace registry
     std::string id;
     std::string name;
     std::string repo; // "owner/name" on GitHub
+    std::string description;
+
+    // The repo's logo.png, shown before the mod is installed
+    std::string logoUrl() const { return "https://raw.githubusercontent.com/" + repo + "/HEAD/logo.png"; }
   };
 
   // Used when the remote registry can't be fetched

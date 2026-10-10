@@ -8,7 +8,13 @@ else()
 endif()
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-project(zhulis-mods-manager VERSION 1.2.0)
+# Geode.dll uses the release C runtime: a Debug build on Windows crashes on strings made by Geode
+if (WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(WARNING "Debug builds crash with Geode on Windows, building RelWithDebInfo instead")
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+endif()
+
+project(zhulis-mods-manager VERSION 1.3.0)
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
 add_library(${PROJECT_NAME} SHARED ${SOURCES})

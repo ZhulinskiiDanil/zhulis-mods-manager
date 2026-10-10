@@ -3,27 +3,32 @@
     {
       "id": "zhulis.blitzkrieg",
       "name": "Blitzkrieg",
-      "repo": "ZhulinskiiDanil/blitzkrieg"
+      "repo": "ZhulinskiiDanil/blitzkrieg",
+      "description": "Automatic practice progression tracker for GD"
     },
     {
       "id": "zhulis.askdash",
       "name": "AskDash",
-      "repo": "ZhulinskiiDanil/gd-ai"
+      "repo": "ZhulinskiiDanil/gd-ai",
+      "description": "AI assistant: ask anything about GD in-game"
     },
     {
       "id": "zhulis.mods-manager",
       "name": "Zhulis Mods Manager",
-      "repo": "ZhulinskiiDanil/zhulis-mods-manager"
+      "repo": "ZhulinskiiDanil/zhulis-mods-manager",
+      "description": "Install and update Zhulis mods straight from GitHub releases"
     },
     {
       "id": "zhulis.icon-mayhem",
       "name": "Icon Mayhem",
-      "repo": "ZhulinskiiDanil/icon-mayhem"
+      "repo": "ZhulinskiiDanil/icon-mayhem",
+      "description": "Cute and crazy icon customizations: physics-based hair, accessories, wings, a pet and effects"
     },
     {
       "id": "zhulis.improved-logger",
       "name": "Improved Logger",
-      "repo": "ZhulinskiiDanil/improved-geode-logger"
+      "repo": "ZhulinskiiDanil/improved-geode-logger",
+      "description": "An interactive console for the logs: groups by mod, folds repeats, search, level and mod filters"
     }
   ]
 }
