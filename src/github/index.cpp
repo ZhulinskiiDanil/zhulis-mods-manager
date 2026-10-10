@@ -45,6 +45,7 @@ struct Asset
 {
   std::string url;
   std::string sha256;
+  int64_t size = 0;
 };
 
 static std::optional<Asset> findAsset(matjson::Value const &release, std::string const &modID)
@@ -69,11 +70,13 @@ static std::optional<Asset> findAsset(matjson::Value const &release, std::string
     auto digest = asset["digest"].asString().unwrapOr("");
     auto sha256 = digest.starts_with("sha256:") ? digest.substr(7) : "";
 
+    auto size = asset["size"].as<int64_t>().unwrapOr(0);
+
     if (name == exactName)
-      return Asset{url.unwrap(), sha256};
+      return Asset{url.unwrap(), sha256, size};
 
     if (!anyGeode && name.ends_with(".geode"))
-      anyGeode = Asset{url.unwrap(), sha256};
+      anyGeode = Asset{url.unwrap(), sha256, size};
   }
 
   return anyGeode;
@@ -118,6 +121,7 @@ Result<std::vector<github::Release>> github::parseReleases(
         item["body"].asString().unwrapOr(""),
         prerelease,
         item["published_at"].asString().unwrapOr(""),
+        asset->size,
     });
   }
 

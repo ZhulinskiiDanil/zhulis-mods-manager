@@ -115,8 +115,32 @@ void ManagerPopup::rebuildList()
   else
     m_statusLabel->setString("");
 
+  // The manager first, then the mods waiting for something (an update, a restart), then the rest
+  auto rank = [](ModState const &state)
+  {
+    if (state.entry.id == Mod::get()->getID())
+      return 0;
+    switch (state.status)
+    {
+    case Status::UpdateAvailable:
+    case Status::Downloaded:
+    case Status::Changed:
+    case Status::Disabled:
+    case Status::Error:
+      return 1;
+    default:
+      return 2;
+    }
+  };
+
+  std::vector<ModState const *> ordered;
   for (auto const &state : manager.mods())
-    content->addChild(createRow(state, m_list->getContentWidth()));
+    ordered.push_back(&state);
+  std::ranges::stable_sort(ordered, [&](auto a, auto b)
+                           { return rank(*a) < rank(*b); });
+
+  for (auto state : ordered)
+    content->addChild(createRow(*state, m_list->getContentWidth()));
 
   content->updateLayout();
 

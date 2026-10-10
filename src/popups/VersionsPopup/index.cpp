@@ -219,7 +219,16 @@ CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &r
     after += pre->getScaledContentWidth() + 6.f;
   }
 
-  if (auto when = github::ago(release.published); !when.empty())
+  auto when = github::ago(release.published);
+  // How big the download is, next to when it came out
+  if (release.size > 0)
+  {
+    auto size = release.size >= 1024 * 1024 ? fmt::format("{:.1f} MB", release.size / 1048576.0)
+                                             : fmt::format("{} KB", (release.size + 1023) / 1024);
+    when = when.empty() ? size : fmt::format("{} - {}", when, size);
+  }
+
+  if (!when.empty())
   {
     auto date = CCLabelBMFont::create(when.c_str(), "chatFont.fnt");
     date->setScale(.5f);

@@ -18,6 +18,7 @@ namespace github
     std::string body;
     bool prerelease = false;
     std::string published; // "2026-10-10T13:54:42Z"
+    int64_t size = 0;      // of the .geode, in bytes
   };
 
   // "today", "yesterday", "3 days ago", "2 months ago" for a GitHub timestamp, empty if it can't be read

@@ -1,6 +1,8 @@
 # v1.3.1
 
  * The versions list links to the mod's repo on GitHub
+ * Download size of every release in the versions list
+ * Mods waiting for something (an update, Enable, a restart) come first in the list, after the manager
 
 # v1.3.0
 
