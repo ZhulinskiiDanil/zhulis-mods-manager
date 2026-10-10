@@ -82,6 +82,8 @@ void VersionsPopup::rebuildList()
   for (auto const &release : state->releases)
     content->addChild(createRow(*state, release, width));
 
+  content->addChild(createRepoRow(*state, width));
+
   // Not the manager itself, it would take away the way back
   auto installed = Loader::get()->getInstalledMod(m_modID);
   if (installed && !installed->isUninstalled() && installed != Mod::get() && state->status != Status::Changed)
@@ -248,6 +250,30 @@ CCNode *VersionsPopup::createRow(ModState const &state, github::Release const &r
     menu->addChild(btn);
   }
 
+  menu->updateLayout();
+
+  return row;
+}
+
+// ! --- Repo --- !
+
+CCNode *VersionsPopup::createRepoRow(ModState const &state, float width)
+{
+  auto row = createRowBase("repo", width, ROW_HEIGHT);
+
+  auto label = CCLabelBMFont::create(fmt::format("github.com/{}", state.entry.repo).c_str(), "chatFont.fnt");
+  label->limitLabelWidth(width * .6f, .55f, .3f);
+  label->setOpacity(180);
+  row->addChildAtPosition(label, Anchor::Left, {8.f, 0.f}, {0.f, .5f});
+
+  auto menu = createActionMenu(row, width, ROW_HEIGHT);
+  auto spr = ButtonSprite::create("Open", "goldFont.fnt", "GJ_button_04.png", .8f);
+  spr->setScale(.5f);
+
+  auto btn = CCMenuItemExt::createSpriteExtra(spr, [repo = state.entry.repo](auto)
+                                              { web::openLinkInBrowser(fmt::format("https://github.com/{}", repo)); });
+  btn->setID("repo-button");
+  menu->addChild(btn);
   menu->updateLayout();
 
   return row;

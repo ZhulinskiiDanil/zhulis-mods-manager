@@ -1,3 +1,7 @@
+# v1.3.1
+
+ * The versions list links to the mod's repo on GitHub
+
 # v1.3.0
 
  * Every mod in the list shows its logo and a short description
