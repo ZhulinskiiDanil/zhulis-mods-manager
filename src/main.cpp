@@ -35,6 +35,15 @@ static void notifyUpdates()
         ->show();
 }
 
+// ! --- What's new --- !
+
+// The game restarted after an install: what changed in the mods it loaded
+$on_game(Loaded)
+{
+  if (auto notes = takeWhatsNew())
+    MDPopup::create("What's new", *notes, "OK")->show();
+}
+
 // ! --- Startup update check --- !
 
 // Set when the check finished before the main menu was shown

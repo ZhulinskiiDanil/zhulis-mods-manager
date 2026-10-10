@@ -595,6 +595,78 @@ void Manager::onNightlyDownload(std::string const &id, github::Nightly const &ni
   installPackage(*state, temp, nightly.label(), nightly.sha);
 }
 
+// ! --- What's new --- !
+// The notes of what was installed, shown after the restart that loads it
+
+static constexpr std::string_view WHATS_NEW_KEY = "whats-new";
+
+static void rememberWhatsNew(ModState const &state, std::string const &label, VersionInfo const &version, bool nightly)
+{
+  std::string notes;
+
+  if (nightly && state.nightly)
+    notes = fmt::format("Nightly build of `{}`: {}", state.nightly->shortSha(), state.nightly->message);
+  else
+  {
+    auto release = std::ranges::find_if(state.releases, [&](auto const &release)
+                                        { return release.tag == label; });
+    if (release != state.releases.end())
+      notes = release->body;
+  }
+
+  auto saved = Mod::get()->getSavedValue<matjson::Value>(WHATS_NEW_KEY, matjson::Value::array());
+  auto list = matjson::Value::array();
+
+  // A newer install of the same mod replaces the older one
+  if (saved.isArray())
+  {
+    for (auto const &item : saved)
+    {
+      if (item["id"].asString().unwrapOr("") != state.entry.id)
+        list.push(item);
+    }
+  }
+
+  list.push(matjson::makeObject({
+      {"id", state.entry.id},
+      {"name", state.entry.name},
+      {"version", version.toVString()},
+      {"title", label},
+      {"notes", notes},
+  }));
+  Mod::get()->setSavedValue(WHATS_NEW_KEY, list);
+}
+
+std::optional<std::string> manager::takeWhatsNew()
+{
+  auto saved = Mod::get()->getSavedValue<matjson::Value>(WHATS_NEW_KEY, matjson::Value::array());
+  Mod::get()->setSavedValue(WHATS_NEW_KEY, matjson::Value::array());
+
+  if (!saved.isArray())
+    return std::nullopt;
+
+  std::string text;
+
+  for (auto const &item : saved)
+  {
+    auto id = item["id"].asString().unwrapOr("");
+    auto version = item["version"].asString().unwrapOr("");
+    auto mod = Loader::get()->getInstalledMod(id);
+
+    // Only what actually loaded: a failed or replaced install says nothing
+    if (!mod || mod->getVersion().toVString() != version)
+      continue;
+
+    auto notes = item["notes"].asString().unwrapOr("");
+    text += fmt::format("# {} {}\n\n{}\n\n", item["name"].asString().unwrapOr(id), item["title"].asString().unwrapOr(version),
+                        notes.empty() ? "No notes." : notes);
+  }
+
+  if (text.empty())
+    return std::nullopt;
+  return text;
+}
+
 void Manager::installPackage(ModState &state, std::filesystem::path const &temp,
                              std::string label, std::optional<std::string> nightlySha)
 {
@@ -628,6 +700,7 @@ void Manager::installPackage(ModState &state, std::filesystem::path const &temp,
   }
 
   saveInstalledNightly(id, nightlySha.value_or(""), metadata.getVersion());
+  rememberWhatsNew(state, label, metadata.getVersion(), nightlySha.has_value());
 
   state.status = Status::Downloaded;
   state.downloadedTag = std::move(label);

@@ -1,5 +1,6 @@
 # v1.3.1
 
+ * After the restart that loads an update, a What's new popup shows the notes of what was installed
  * The versions list links to the mod's repo on GitHub
  * Download size of every release in the versions list
  * Mods waiting for something (an update, Enable, a restart) come first in the list, after the manager

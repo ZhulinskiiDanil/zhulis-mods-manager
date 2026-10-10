@@ -142,4 +142,7 @@ namespace manager
 
   // Markdown with the notes of every release newer than the installed one
   std::string changelog(ModState const &state);
+
+  // The notes of what the manager installed before the last restart, once
+  std::optional<std::string> takeWhatsNew();
 }
