@@ -19,6 +19,11 @@
       "id": "zhulis.icon-mayhem",
       "name": "Icon Mayhem",
       "repo": "ZhulinskiiDanil/icon-mayhem"
+    },
+    {
+      "id": "zhulis.improved-logger",
+      "name": "Improved Logger",
+      "repo": "ZhulinskiiDanil/improved-geode-logger"
     }
   ]
 }
