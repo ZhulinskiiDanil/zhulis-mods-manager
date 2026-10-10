@@ -82,6 +82,34 @@ static std::optional<Asset> findAsset(matjson::Value const &release, std::string
   return anyGeode;
 }
 
+// The notes as the game shows them: an "Install" section tells how to download the release from
+// GitHub, which is what the manager just did
+static std::string gameNotes(std::string body)
+{
+  std::erase(body, '\r');
+
+  size_t start = 0;
+  while (start < body.size())
+  {
+    auto end = body.find('\n', start);
+    auto line = std::string_view(body).substr(start, end == std::string::npos ? std::string::npos : end - start);
+    auto title = line.substr(std::min(line.find_first_not_of('#'), line.size()));
+
+    auto name = utils::string::toLower(std::string(utils::string::trim(std::string(title))));
+    if (line.starts_with('#') && (name == "install" || name == "installation" || name == "how to install"))
+    {
+      body.erase(start);
+      break;
+    }
+
+    if (end == std::string::npos)
+      break;
+    start = end + 1;
+  }
+
+  return std::string(utils::string::trim(body));
+}
+
 Result<std::vector<github::Release>> github::parseReleases(
     std::string const &body, std::string const &modID, bool includePrereleases)
 {
@@ -118,7 +146,7 @@ Result<std::vector<github::Release>> github::parseReleases(
         tag,
         asset->url,
         utils::string::toLower(asset->sha256),
-        item["body"].asString().unwrapOr(""),
+        gameNotes(item["body"].asString().unwrapOr("")),
         prerelease,
         item["published_at"].asString().unwrapOr(""),
         asset->size,

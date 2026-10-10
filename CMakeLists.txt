@@ -14,7 +14,7 @@ if (WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
-project(zhulis-mods-manager VERSION 1.3.3)
+project(zhulis-mods-manager VERSION 1.3.4)
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
 add_library(${PROJECT_NAME} SHARED ${SOURCES})

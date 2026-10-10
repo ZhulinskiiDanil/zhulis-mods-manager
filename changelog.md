@@ -1,3 +1,7 @@
+# v1.3.4
+
+ * Release notes in the game leave out their Install section: it tells how to download the release from GitHub, which the manager just did
+
 # v1.3.3
 
  * The versions list has an info button on every release with its notes, to see what changed before installing or rolling back
