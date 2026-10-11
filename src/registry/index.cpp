@@ -13,6 +13,7 @@ std::vector<registry::ModEntry> registry::fallback()
       {"zhulis.icon-mayhem", "Icon Mayhem", "ZhulinskiiDanil/icon-mayhem", "Cute and crazy icon customizations: physics-based hair, accessories, wings, a pet and effects"},
       {"zhulis.improved-logger", "Improved Logger", "ZhulinskiiDanil/improved-geode-logger", "An interactive console for the logs: groups by mod, folds repeats, search, level and mod filters"},
       {"zhulis.mod-profiler", "Mod Profiler", "ZhulinskiiDanil/mod-profiler", "Beta: how much of each frame every installed mod takes"},
+      {"zhulis.crash-doctor", "Crash Doctor", "ZhulinskiiDanil/crash-doctor", "Beta: after a crash, where it happened, what most likely went wrong and what you did before"},
   };
 }
 
