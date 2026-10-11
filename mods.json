@@ -29,6 +29,12 @@
       "name": "Improved Logger",
       "repo": "ZhulinskiiDanil/improved-geode-logger",
       "description": "An interactive console for the logs: groups by mod, folds repeats, search, level and mod filters"
+    },
+    {
+      "id": "zhulis.mod-profiler",
+      "name": "Mod Profiler",
+      "repo": "ZhulinskiiDanil/mod-profiler",
+      "description": "Beta: how much of each frame every installed mod takes"
     }
   ]
 }
