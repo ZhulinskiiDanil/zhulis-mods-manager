@@ -35,6 +35,12 @@
       "name": "Mod Profiler",
       "repo": "ZhulinskiiDanil/mod-profiler",
       "description": "Beta: how much of each frame every installed mod takes"
+    },
+    {
+      "id": "zhulis.crash-doctor",
+      "name": "Crash Doctor",
+      "repo": "ZhulinskiiDanil/crash-doctor",
+      "description": "Beta: after a crash, where it happened, what most likely went wrong and what you did before"
     }
   ]
 }
