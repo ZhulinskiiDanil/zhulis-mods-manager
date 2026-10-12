@@ -41,6 +41,12 @@
       "name": "Crash Doctor",
       "repo": "ZhulinskiiDanil/crash-doctor",
       "description": "Beta: after a crash, where it happened, what most likely went wrong and what you did before"
+    },
+    {
+      "id": "zhulis.ui-tweaker",
+      "name": "UI Tweaker",
+      "repo": "ZhulinskiiDanil/ui-tweaker",
+      "description": "Beta: move, scale and resize any part of the game's UI with the mouse, then copy it as ready C++ for your mod"
     }
   ]
 }
