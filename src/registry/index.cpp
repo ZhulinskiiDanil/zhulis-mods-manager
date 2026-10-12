@@ -15,6 +15,7 @@ std::vector<registry::ModEntry> registry::fallback()
       {"zhulis.mod-profiler", "Mod Profiler", "ZhulinskiiDanil/mod-profiler", "Beta: how much of each frame every installed mod takes"},
       {"zhulis.crash-doctor", "Crash Doctor", "ZhulinskiiDanil/crash-doctor", "Beta: after a crash, where it happened, what most likely went wrong and what you did before"},
       {"zhulis.ui-tweaker", "UI Tweaker", "ZhulinskiiDanil/ui-tweaker", "Beta: move, scale and resize any part of the game's UI with the mouse, then copy it as ready C++ for your mod"},
+      {"zhulis.miside-menu", "MiSide Menu", "ZhulinskiiDanil/MiSide", "Geometry Dash's screens in the style of MiSide's interface, with an animated 3D Mita"},
   };
 }
 

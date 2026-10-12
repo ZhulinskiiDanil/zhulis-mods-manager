@@ -47,6 +47,12 @@
       "name": "UI Tweaker",
       "repo": "ZhulinskiiDanil/ui-tweaker",
       "description": "Beta: move, scale and resize any part of the game's UI with the mouse, then copy it as ready C++ for your mod"
+    },
+    {
+      "id": "zhulis.miside-menu",
+      "name": "MiSide Menu",
+      "repo": "ZhulinskiiDanil/MiSide",
+      "description": "Geometry Dash's screens in the style of MiSide's interface, with an animated 3D Mita"
     }
   ]
 }
