@@ -120,18 +120,37 @@ Result<std::vector<github::Release>> github::parseReleases(
 
   std::vector<Release> releases;
 
+  // Builds for a specific GD version are tagged "<version>-gd<gd version>" (e.g. v2.2.5-gd2.209).
+  // When the running game has such builds, only they are offered; builds for other GD versions are skipped.
+  auto gameSuffix = "-gd" + Loader::get()->getGameVersion();
+  bool hasGameBuilds = false;
+  for (auto const &item : json.unwrap())
+  {
+    if (item["tag_name"].asString().unwrapOr("").ends_with(gameSuffix))
+      hasGameBuilds = true;
+  }
+
   for (auto const &item : json.unwrap())
   {
     if (item["draft"].asBool().unwrapOr(false))
       continue;
 
-    bool prerelease = item["prerelease"].asBool().unwrapOr(false);
+    auto tag = item["tag_name"].asString().unwrapOr("");
+    bool forGame = tag.ends_with(gameSuffix);
+
+    if (tag.find("-gd") != std::string::npos && !forGame)
+      continue;
+
+    if (hasGameBuilds && !forGame)
+      continue;
+
+    // A build for the running GD version is the stable choice for it, even if GitHub marks it as a pre-release
+    bool prerelease = item["prerelease"].asBool().unwrapOr(false) && !forGame;
 
     if (prerelease && !includePrereleases)
       continue;
 
-    auto tag = item["tag_name"].asString().unwrapOr("");
-    auto version = VersionInfo::parse(tag);
+    auto version = VersionInfo::parse(forGame ? tag.substr(0, tag.size() - gameSuffix.size()) : tag);
 
     if (version.isErr())
       continue;
